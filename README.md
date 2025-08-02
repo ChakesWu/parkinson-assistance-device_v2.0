@@ -232,10 +232,13 @@ python -c "from python.deployment.model_quantization import *; main()"
 3. 提交代碼變更
 4. 發起Pull Request
 
+
 ### 許可協議
 本專案採用MIT許可協議，詳見LICENSE文件。
 
+
 ---
 
-**重要提示**: 本裝置僅用於輔助評估和康復訓練，不能替代專業醫療診斷。使用前請諮詢醫療專業人員。#   p a r k i n s o n - a s s i s t a n c e - d e v i c e _ v 2 . 0  
+**重要提示**: 本裝置僅用於輔助評估和康復訓練，不能替代專業醫療診斷。使用前請諮詢醫療專業人員。#   p a r k i n s o n - a s s i s t a n c e - d e v i c e _ v 2 . 0 
+ 
  
