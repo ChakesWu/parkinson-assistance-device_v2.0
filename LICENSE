@@ -1,0 +1,39 @@
+MIT License
+
+Copyright (c) 2024 帕金森輔助裝置開發團隊
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+=============================================================================
+
+醫療免責聲明:
+
+本軟體和硬體系統僅用於研究和輔助目的，不能替代專業的醫療診斷、治療或建議。
+
+1. 本系統的分析結果僅供參考，不應作為醫療診斷的唯一依據。
+
+2. 使用者應該在醫療專業人員的指導下使用本系統。
+
+3. 任何基於本系統結果做出的醫療決策，使用者需承擔相應責任。
+
+4. 開發團隊不對使用本系統可能產生的任何直接或間接後果承擔責任。
+
+5. 如有任何健康疑慮，請立即諮詢合格的醫療專業人員。
+
+使用本系統即表示您已理解並同意上述條款。

@@ -1,0 +1,48 @@
+# 帕金森輔助裝置系統依賴
+
+# 核心機器學習和數據處理
+tensorflow>=2.10.0
+tensorflow-lite-runtime>=2.10.0
+numpy>=1.21.0
+pandas>=1.3.0
+scikit-learn>=1.0.0
+
+# 數據可視化
+matplotlib>=3.5.0
+seaborn>=0.11.0
+
+# 串口通信
+pyserial>=3.5
+
+# 模型保存和加載
+joblib>=1.1.0
+
+# 數據格式處理
+json5>=0.9.6
+
+# 時間和日期處理
+python-dateutil>=2.8.0
+
+# 科學計算和信號處理
+scipy>=1.7.0
+
+# 進度條和用戶界面
+tqdm>=4.62.0
+
+# 配置文件處理
+pyyaml>=6.0
+
+# 可選：Jupyter notebook支持
+jupyter>=1.0.0
+ipykernel>=6.0.0
+
+# 可選：更高級的可視化
+plotly>=5.0.0
+
+# 可選：模型解釋性
+shap>=0.40.0
+
+# 開發和測試工具
+pytest>=6.0.0
+flake8>=4.0.0
+black>=22.0.0
