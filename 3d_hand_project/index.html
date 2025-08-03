@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Arduino 手指彎曲感測器</title>
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles_ai.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://threejs.org/examples/js/loaders/GLTFLoader.js"></script>
 </head>
@@ -37,8 +38,10 @@
                     <div class="hand3d-controls">
                         <button id="testAnimationBtn" class="test-btn">測試動畫</button>
                         <button id="resetHandBtn" class="reset-btn">重置手部</button>
+                        <button id="robotDemoBtn" class="robot-btn">🤖 機械手展示</button>
                         <div class="hand3d-info">
                             <p>使用滑鼠拖拽旋轉視角，滾輪縮放</p>
+                            <p class="robot-info">✨ 全新機械人手設計 - 金屬質感、LED燈效、動態光照</p>
                         </div>
                     </div>
                 </div>
@@ -143,6 +146,47 @@
                 </div>
             </section>
 
+            <!-- AI分析結果顯示區域 -->
+            <section class="ai-analysis-section">
+                <h2>AI 分析結果</h2>
+                <div class="ai-analysis-container">
+                    <div class="analysis-summary">
+                        <div class="level-display">
+                            <div class="level-indicator" id="levelIndicator"></div>
+                            <div class="level-info">
+                                <span class="level-label">帕金森等級:</span>
+                                <span class="level-value" id="parkinsonLevel">-</span>
+                                <span class="level-description" id="parkinsonDescription">等待分析</span>
+                            </div>
+                        </div>
+                        
+                        <div class="confidence-display">
+                            <span class="confidence-label">置信度:</span>
+                            <span class="confidence-value" id="confidence">-%</span>
+                        </div>
+                    </div>
+                    
+                    <div class="analysis-details">
+                        <div class="detail-item">
+                            <span class="detail-label">分析次數:</span>
+                            <span class="detail-value" id="analysisCount">0</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">建議阻力設定:</span>
+                            <span class="detail-value" id="recommendedResistance">-</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">最後更新:</span>
+                            <span class="detail-value" id="lastUpdate">尚未分析</span>
+                        </div>
+                    </div>
+                    
+                    <div class="recommendation-display">
+                        <h3>訓練建議</h3>
+                        <p class="recommendation-text" id="recommendation">請連接設備並開始分析以獲得個性化訓練建議</p>
+                    </div>
+                </div>
+            </section>
 
             <!-- 接口說明 -->
             <section class="api-section">

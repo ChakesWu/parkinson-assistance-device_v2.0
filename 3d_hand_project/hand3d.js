@@ -72,47 +72,94 @@ class Hand3D {
     }
     
     createRenderer() {
-        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        this.renderer = new THREE.WebGLRenderer({ 
+            antialias: true,
+            alpha: true,
+            powerPreference: "high-performance"
+        });
         this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        
+        // 啟用陰影
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        
+        // 增強渲染效果以支持PBR材質
+        this.renderer.physicallyCorrectLights = true;
+        this.renderer.outputEncoding = THREE.sRGBEncoding;
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.toneMappingExposure = 1.2;
+        
+        // 背景設置
+        this.renderer.setClearColor(0x0a0a0a, 0.8); // 深色科技背景
+        
         this.container.appendChild(this.renderer.domElement);
     }
     
     createLights() {
-        // 環境光 - 提供基礎照明
-        const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
+        // 環境光 - 為機械手提供基礎科技感照明
+        const ambientLight = new THREE.AmbientLight(0x2a3f5f, 0.3);
         this.scene.add(ambientLight);
         
-        // 主要方向光 - 模擬太陽光
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
-        directionalLight.position.set(5, 8, 5);
+        // 主要方向光 - 強烈的白光突出金屬質感
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
+        directionalLight.position.set(8, 10, 6);
         directionalLight.castShadow = true;
-        directionalLight.shadow.mapSize.width = 2048;
-        directionalLight.shadow.mapSize.height = 2048;
+        directionalLight.shadow.mapSize.width = 4096;
+        directionalLight.shadow.mapSize.height = 4096;
         directionalLight.shadow.camera.near = 0.5;
         directionalLight.shadow.camera.far = 50;
-        directionalLight.shadow.camera.left = -10;
-        directionalLight.shadow.camera.right = 10;
-        directionalLight.shadow.camera.top = 10;
-        directionalLight.shadow.camera.bottom = -10;
+        directionalLight.shadow.camera.left = -12;
+        directionalLight.shadow.camera.right = 12;
+        directionalLight.shadow.camera.top = 12;
+        directionalLight.shadow.camera.bottom = -12;
+        directionalLight.shadow.bias = -0.0001;
         this.scene.add(directionalLight);
         
-        // 補光 - 減少陰影過深
-        const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
-        fillLight.position.set(-3, 3, -3);
-        this.scene.add(fillLight);
+        // 藍色科技光 - 從左側照射，營造科技感
+        const techLight = new THREE.DirectionalLight(0x4a90e2, 0.8);
+        techLight.position.set(-8, 5, 4);
+        this.scene.add(techLight);
         
-        // 點光源 - 增加細節照明
-        const pointLight = new THREE.PointLight(0xffffff, 0.6, 20);
-        pointLight.position.set(-5, 5, 5);
-        pointLight.castShadow = true;
-        this.scene.add(pointLight);
+        // 橙色暖光 - 從右側照射，平衡色溫
+        const warmLight = new THREE.DirectionalLight(0xff8c42, 0.4);
+        warmLight.position.set(6, 3, -4);
+        this.scene.add(warmLight);
         
-        // 邊緣光 - 增強立體感
-        const rimLight = new THREE.DirectionalLight(0xccddff, 0.4);
-        rimLight.position.set(-5, 2, -5);
+        // 頂部環境光 - 模擬天空光
+        const skyLight = new THREE.HemisphereLight(0x87ceeb, 0x2f4f4f, 0.6);
+        this.scene.add(skyLight);
+        
+        // 背光 - 創造酷炫的邊緣光效果
+        const rimLight = new THREE.DirectionalLight(0x00ffff, 0.5);
+        rimLight.position.set(0, 8, -12);
         this.scene.add(rimLight);
+        
+        // 底部補光 - 照亮陰影區域
+        const bottomLight = new THREE.DirectionalLight(0x6a5acd, 0.3);
+        bottomLight.position.set(0, -5, 8);
+        this.scene.add(bottomLight);
+        
+        // 添加動態光效
+        this.createDynamicLights();
+    }
+    
+    createDynamicLights() {
+        // 創建動態旋轉的彩色光源
+        const spotLight1 = new THREE.SpotLight(0xff0080, 1, 15, Math.PI * 0.1);
+        spotLight1.position.set(5, 8, 5);
+        spotLight1.target.position.set(0, 0, 0);
+        this.scene.add(spotLight1);
+        this.scene.add(spotLight1.target);
+        
+        const spotLight2 = new THREE.SpotLight(0x0080ff, 1, 15, Math.PI * 0.1);
+        spotLight2.position.set(-5, 8, 5);
+        spotLight2.target.position.set(0, 0, 0);
+        this.scene.add(spotLight2);
+        this.scene.add(spotLight2.target);
+        
+        // 存儲動態光源以便在動畫中使用
+        this.dynamicLights = [spotLight1, spotLight2];
     }
     
     loadHandModel() {
@@ -240,38 +287,141 @@ class Hand3D {
     }
     
     createPalm() {
-        // 創建更逼真的手掌形狀
-        const palmGeometry = new THREE.BoxGeometry(2.2, 0.4, 2.8);
+        // 創建機械手掌的主體 - 更有棱角的設計
+        const palmGeometry = new THREE.BoxGeometry(2.4, 0.6, 3.0);
         
-        // 使用更逼真的肌膚材質
-        const palmMaterial = new THREE.MeshPhongMaterial({ 
-            color: 0xfdbcb4,
-            shininess: 30,
-            specular: 0x111111
+        // 機械手掌的金屬材質
+        const palmMaterial = new THREE.MeshPhysicalMaterial({ 
+            color: 0x4a5568,
+            metalness: 0.8,
+            roughness: 0.2,
+            clearcoat: 0.5,
+            clearcoatRoughness: 0.1
         });
         
         const palm = new THREE.Mesh(palmGeometry, palmMaterial);
         palm.position.set(0, 0, 0);
         palm.castShadow = true;
         palm.receiveShadow = true;
-        
-        // 添加手掌的圓角效果
-        palm.scale.set(1, 1, 0.9);
-        
         this.handModel.add(palm);
         
-        // 添加手腕部分
-        const wristGeometry = new THREE.CylinderGeometry(0.8, 0.9, 1.5, 12);
-        const wristMaterial = new THREE.MeshPhongMaterial({ 
-            color: 0xfdbcb4,
-            shininess: 30,
-            specular: 0x111111
+        // 添加機械手掌的裝飾線條
+        const plateGeometry = new THREE.BoxGeometry(2.0, 0.05, 2.6);
+        const plateMaterial = new THREE.MeshPhysicalMaterial({ 
+            color: 0x2d3748,
+            metalness: 0.9,
+            roughness: 0.1
+        });
+        
+        const topPlate = new THREE.Mesh(plateGeometry, plateMaterial);
+        topPlate.position.set(0, 0.32, 0);
+        this.handModel.add(topPlate);
+        
+        const bottomPlate = new THREE.Mesh(plateGeometry, plateMaterial);
+        bottomPlate.position.set(0, -0.32, 0);
+        this.handModel.add(bottomPlate);
+        
+        // 添加LED指示燈
+        this.createPalmLEDs();
+        
+        // 添加機械手腕
+        this.createRobotWrist();
+        
+        // 添加機械細節
+        this.createMechanicalDetails();
+    }
+    
+    createPalmLEDs() {
+        // 創建LED指示燈
+        const ledGeometry = new THREE.SphereGeometry(0.08, 8, 8);
+        const ledMaterial = new THREE.MeshBasicMaterial({ 
+            color: 0x00ff88,
+            emissive: 0x004422,
+            transparent: true,
+            opacity: 0.8
+        });
+        
+        const ledPositions = [
+            [-0.8, 0.35, 0.5],
+            [0, 0.35, 0.8],
+            [0.8, 0.35, 0.5]
+        ];
+        
+        ledPositions.forEach(pos => {
+            const led = new THREE.Mesh(ledGeometry, ledMaterial);
+            led.position.set(...pos);
+            this.handModel.add(led);
+            
+            // 添加LED光源效果
+            const ledLight = new THREE.PointLight(0x00ff88, 0.5, 2);
+            ledLight.position.copy(led.position);
+            this.handModel.add(ledLight);
+        });
+    }
+    
+    createRobotWrist() {
+        // 機械手腕主體
+        const wristGeometry = new THREE.CylinderGeometry(0.9, 1.0, 1.8, 12);
+        const wristMaterial = new THREE.MeshPhysicalMaterial({ 
+            color: 0x2d3748,
+            metalness: 0.9,
+            roughness: 0.3
         });
         const wrist = new THREE.Mesh(wristGeometry, wristMaterial);
-        wrist.position.set(0, -0.75, -1.2);
+        wrist.position.set(0, -0.9, -1.2);
         wrist.castShadow = true;
         wrist.receiveShadow = true;
         this.handModel.add(wrist);
+        
+        // 手腕關節環
+        const ringCount = 3;
+        for (let i = 0; i < ringCount; i++) {
+            const ringGeometry = new THREE.TorusGeometry(1.1, 0.08, 8, 16);
+            const ringMaterial = new THREE.MeshPhysicalMaterial({ 
+                color: 0x1a202c,
+                metalness: 1.0,
+                roughness: 0.1
+            });
+            const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+            ring.position.set(0, -0.4 - i * 0.4, -1.2);
+            ring.rotation.x = Math.PI / 2;
+            this.handModel.add(ring);
+        }
+    }
+    
+    createMechanicalDetails() {
+        // 添加螺丝和機械細節
+        const screwGeometry = new THREE.CylinderGeometry(0.06, 0.06, 0.1, 8);
+        const screwMaterial = new THREE.MeshPhysicalMaterial({ 
+            color: 0x718096,
+            metalness: 0.9,
+            roughness: 0.4
+        });
+        
+        const screwPositions = [
+            [-1.0, 0.35, -1.0], [1.0, 0.35, -1.0],
+            [-1.0, 0.35, 1.0], [1.0, 0.35, 1.0]
+        ];
+        
+        screwPositions.forEach(pos => {
+            const screw = new THREE.Mesh(screwGeometry, screwMaterial);
+            screw.position.set(...pos);
+            this.handModel.add(screw);
+        });
+        
+        // 添加通風口
+        this.createVentilation();
+    }
+    
+    createVentilation() {
+        const ventGeometry = new THREE.BoxGeometry(0.1, 0.05, 0.8);
+        const ventMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+        
+        for (let i = 0; i < 4; i++) {
+            const vent = new THREE.Mesh(ventGeometry, ventMaterial);
+            vent.position.set(-0.6 + i * 0.4, 0.32, -0.8);
+            this.handModel.add(vent);
+        }
     }
     
     createFingers() {
@@ -302,25 +452,25 @@ class Hand3D {
         const fingerGroup = new THREE.Group();
         fingerGroup.name = name;
         
-        // 根據手指類型調整關節配置
+        // 根據手指類型調整關節配置 - 機械手指版本
         let joints;
         if (name === 'thumb') {
             joints = [
-                { length: 0.9, radius: 0.15 }, // 拇指較粗短
-                { length: 0.7, radius: 0.12 },
-                { length: 0.5, radius: 0.1 }
+                { length: 0.9, radius: 0.16, type: 'base' }, // 拇指較粗短
+                { length: 0.7, radius: 0.13, type: 'middle' },
+                { length: 0.5, radius: 0.11, type: 'tip' }
             ];
         } else if (name === 'pinky') {
             joints = [
-                { length: 0.6, radius: 0.08 }, // 小指較細短
-                { length: 0.5, radius: 0.07 },
-                { length: 0.3, radius: 0.06 }
+                { length: 0.6, radius: 0.09, type: 'base' }, // 小指較細短
+                { length: 0.5, radius: 0.08, type: 'middle' },
+                { length: 0.3, radius: 0.07, type: 'tip' }
             ];
         } else {
             joints = [
-                { length: 0.8, radius: 0.12 }, // 其他手指
-                { length: 0.7, radius: 0.1 },
-                { length: 0.5, radius: 0.08 }
+                { length: 0.8, radius: 0.13, type: 'base' }, // 其他手指
+                { length: 0.7, radius: 0.11, type: 'middle' },
+                { length: 0.5, radius: 0.09, type: 'tip' }
             ];
         }
         
@@ -328,66 +478,9 @@ class Hand3D {
         const jointMeshes = [];
         
         joints.forEach((joint, jointIndex) => {
-            // 創建更圓滑的手指關節 - 使用 CylinderGeometry 替代 CapsuleGeometry
-            const jointGeometry = new THREE.CylinderGeometry(
-                joint.radius, joint.radius, joint.length, 12
-            );
-            
-            // 添加圓形端蓋
-            const topCapGeometry = new THREE.SphereGeometry(joint.radius, 8, 8);
-            const bottomCapGeometry = new THREE.SphereGeometry(joint.radius, 8, 8);
-            
-            // 使用更逼真的肌膚材質
-            const jointMaterial = new THREE.MeshPhongMaterial({ 
-                color: 0xfdbcb4,
-                shininess: 30,
-                specular: 0x111111,
-                transparent: true,
-                opacity: 0.95
-            });
-            
-            const jointMesh = new THREE.Mesh(jointGeometry, jointMaterial);
-            const topCap = new THREE.Mesh(topCapGeometry, jointMaterial);
-            const bottomCap = new THREE.Mesh(bottomCapGeometry, jointMaterial);
-            
-            // 設置位置
-            jointMesh.position.y = currentY + joint.length / 2;
-            topCap.position.y = currentY + joint.length;
-            bottomCap.position.y = currentY;
-            
-            jointMesh.castShadow = true;
-            jointMesh.receiveShadow = true;
-            topCap.castShadow = true;
-            topCap.receiveShadow = true;
-            bottomCap.castShadow = true;
-            bottomCap.receiveShadow = true;
-            
-            // 設置旋轉軸心在關節底部
-            const jointPivot = new THREE.Group();
+            // 創建機械手指關節
+            const jointPivot = this.createRobotJoint(joint, jointIndex, joints.length);
             jointPivot.position.y = currentY;
-            
-            // 調整關節位置
-            jointMesh.position.y = joint.length / 2;
-            topCap.position.y = joint.length;
-            bottomCap.position.y = 0;
-            
-            jointPivot.add(jointMesh);
-            jointPivot.add(topCap);
-            jointPivot.add(bottomCap);
-            
-            // 添加指甲（僅在最後一個關節）
-            if (jointIndex === joints.length - 1) {
-                const nailGeometry = new THREE.SphereGeometry(joint.radius * 0.8, 8, 6, 0, Math.PI);
-                const nailMaterial = new THREE.MeshPhongMaterial({ 
-                    color: 0xf5d5c8,
-                    shininess: 50,
-                    specular: 0x222222
-                });
-                const nail = new THREE.Mesh(nailGeometry, nailMaterial);
-                nail.position.set(0, joint.length * 0.8, joint.radius * 0.3);
-                nail.rotation.x = -Math.PI / 2;
-                jointPivot.add(nail);
-            }
             
             fingerGroup.add(jointPivot);
             jointMeshes.push(jointPivot);
@@ -399,6 +492,143 @@ class Hand3D {
         fingerGroup.joints = jointMeshes;
         
         return fingerGroup;
+    }
+    
+    createRobotJoint(joint, jointIndex, totalJoints) {
+        const jointPivot = new THREE.Group();
+        
+        // 主要關節材質
+        const jointMaterial = new THREE.MeshPhysicalMaterial({ 
+            color: jointIndex === 0 ? 0x4a5568 : 0x2d3748, // 基節較亮
+            metalness: 0.9,
+            roughness: 0.2,
+            clearcoat: 0.3
+        });
+        
+        // 創建機械關節主體 - 更有棱角的設計
+        const mainGeometry = new THREE.CylinderGeometry(
+            joint.radius * 0.9, joint.radius, joint.length * 0.8, 8
+        );
+        const mainJoint = new THREE.Mesh(mainGeometry, jointMaterial);
+        mainJoint.position.y = joint.length * 0.4;
+        mainJoint.castShadow = true;
+        mainJoint.receiveShadow = true;
+        jointPivot.add(mainJoint);
+        
+        // 添加關節連接器
+        this.createJointConnector(jointPivot, joint, jointIndex);
+        
+        // 添加關節環（鉸鏈效果）
+        this.createJointRings(jointPivot, joint);
+        
+        // 添加機械指尖（最後一個關節）
+        if (jointIndex === totalJoints - 1) {
+            this.createRobotFingerTip(jointPivot, joint);
+        }
+        
+        // 添加關節LED指示燈
+        this.createJointLED(jointPivot, joint, jointIndex);
+        
+        return jointPivot;
+    }
+    
+    createJointConnector(jointPivot, joint, jointIndex) {
+        // 關節連接器
+        const connectorGeometry = new THREE.CylinderGeometry(
+            joint.radius * 1.1, joint.radius * 1.1, 0.1, 8
+        );
+        const connectorMaterial = new THREE.MeshPhysicalMaterial({ 
+            color: 0x1a202c,
+            metalness: 1.0,
+            roughness: 0.1
+        });
+        
+        const connector = new THREE.Mesh(connectorGeometry, connectorMaterial);
+        connector.position.y = 0;
+        jointPivot.add(connector);
+        
+        // 添加螺釘細節
+        const screwGeometry = new THREE.CylinderGeometry(0.02, 0.02, 0.12, 6);
+        const screwMaterial = new THREE.MeshPhysicalMaterial({ 
+            color: 0x718096,
+            metalness: 0.9,
+            roughness: 0.4
+        });
+        
+        for (let i = 0; i < 4; i++) {
+            const angle = (i / 4) * Math.PI * 2;
+            const x = Math.cos(angle) * joint.radius * 0.8;
+            const z = Math.sin(angle) * joint.radius * 0.8;
+            
+            const screw = new THREE.Mesh(screwGeometry, screwMaterial);
+            screw.position.set(x, 0, z);
+            jointPivot.add(screw);
+        }
+    }
+    
+    createJointRings(jointPivot, joint) {
+        // 機械關節環
+        for (let i = 0; i < 2; i++) {
+            const ringGeometry = new THREE.TorusGeometry(joint.radius * 0.7, 0.03, 6, 12);
+            const ringMaterial = new THREE.MeshPhysicalMaterial({ 
+                color: 0x1a202c,
+                metalness: 1.0,
+                roughness: 0.1
+            });
+            const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+            ring.position.y = joint.length * 0.2 + i * joint.length * 0.4;
+            ring.rotation.x = Math.PI / 2;
+            jointPivot.add(ring);
+        }
+    }
+    
+    createRobotFingerTip(jointPivot, joint) {
+        // 機械指尖
+        const tipGeometry = new THREE.ConeGeometry(joint.radius * 0.8, joint.length * 0.3, 8);
+        const tipMaterial = new THREE.MeshPhysicalMaterial({ 
+            color: 0x1a202c,
+            metalness: 0.9,
+            roughness: 0.1,
+            clearcoat: 0.8
+        });
+        const tip = new THREE.Mesh(tipGeometry, tipMaterial);
+        tip.position.y = joint.length * 0.85;
+        tip.castShadow = true;
+        jointPivot.add(tip);
+        
+        // 添加感應器
+        const sensorGeometry = new THREE.SphereGeometry(joint.radius * 0.3, 8, 8);
+        const sensorMaterial = new THREE.MeshBasicMaterial({ 
+            color: 0xff4444,
+            emissive: 0x441111,
+            transparent: true,
+            opacity: 0.7
+        });
+        const sensor = new THREE.Mesh(sensorGeometry, sensorMaterial);
+        sensor.position.y = joint.length * 0.9;
+        jointPivot.add(sensor);
+    }
+    
+    createJointLED(jointPivot, joint, jointIndex) {
+        // 關節狀態LED
+        const ledGeometry = new THREE.SphereGeometry(0.04, 6, 6);
+        const ledColor = jointIndex === 0 ? 0x4444ff : 0x44ff44; // 藍色基節，綠色其他
+        const ledMaterial = new THREE.MeshBasicMaterial({ 
+            color: ledColor,
+            emissive: ledColor,
+            emissiveIntensity: 0.3,
+            transparent: true,
+            opacity: 0.8
+        });
+        
+        const led = new THREE.Mesh(ledGeometry, ledMaterial);
+        led.position.set(joint.radius * 0.9, joint.length * 0.5, 0);
+        jointPivot.add(led);
+        
+        // 添加LED光源
+        const ledLight = new THREE.PointLight(ledColor, 0.3, 1);
+        ledLight.position.copy(led.position);
+        jointPivot.add(ledLight);
     }
     
     updateFingerBending(fingerIndex, value) {
@@ -529,20 +759,63 @@ class Hand3D {
             this.mixer.update(0.016); // 假設60fps
         }
         
-        // 更自然的手部浮動動畫
+        // 機械手動畫效果
         const time = Date.now() * 0.001;
         if (this.handModel) {
-            // 輕微的上下浮動
-            this.handModel.position.y = Math.sin(time * 0.8) * 0.05 - 1;
+            // 機械手輕微浮動（更精確的機械感）
+            this.handModel.position.y = Math.sin(time * 1.2) * 0.03 - 1;
             
-            // 輕微的左右搖擺
-            this.handModel.rotation.y += Math.sin(time * 0.5) * 0.002;
-            
-            // 輕微的前後傾斜
-            this.handModel.rotation.x += Math.cos(time * 0.3) * 0.001;
+            // 機械手微旋轉
+            this.handModel.rotation.y += Math.sin(time * 0.3) * 0.001;
         }
         
+        // 動態光效動畫
+        if (this.dynamicLights) {
+            this.dynamicLights.forEach((light, index) => {
+                if (light) {
+                    // 光源圓形運動
+                    const radius = 8;
+                    const speed = 0.5 + index * 0.3;
+                    const angle = time * speed + index * Math.PI;
+                    
+                    light.position.x = Math.cos(angle) * radius;
+                    light.position.z = Math.sin(angle) * radius;
+                    light.position.y = 8 + Math.sin(time * 2 + index) * 2;
+                    
+                    // 光強度脈動
+                    light.intensity = 0.8 + Math.sin(time * 3 + index * 2) * 0.4;
+                }
+            });
+        }
+        
+        // LED燈閃爍效果
+        this.animateLEDs(time);
+        
         this.renderer.render(this.scene, this.camera);
+    }
+    
+    animateLEDs(time) {
+        // 遍歷手部模型找到LED元件並添加閃爍效果
+        if (this.handModel) {
+            this.handModel.traverse((child) => {
+                if (child.material && child.material.emissive) {
+                    // 檢查是否是LED材質
+                    if (child.material.color.getHex() === 0x00ff88) {
+                        // 綠色LED脈動
+                        child.material.emissiveIntensity = 0.3 + Math.sin(time * 4) * 0.2;
+                    } else if (child.material.color.getHex() === 0x4444ff) {
+                        // 藍色LED脈動
+                        child.material.emissiveIntensity = 0.3 + Math.sin(time * 6) * 0.2;
+                    } else if (child.material.color.getHex() === 0x44ff44) {
+                        // 其他綠色LED脈動
+                        child.material.emissiveIntensity = 0.3 + Math.sin(time * 5 + 1) * 0.2;
+                    } else if (child.material.color.getHex() === 0xff4444) {
+                        // 紅色傳感器LED脈動
+                        child.material.emissiveIntensity = 0.4 + Math.sin(time * 8) * 0.3;
+                    }
+                }
+            });
+        }
     }
     
     destroy() {

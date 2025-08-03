@@ -11,6 +11,17 @@ let sensorData = {
     magnetometer: { x: 0, y: 0, z: 0 }
 };
 
+// AI分析結果儲存
+let aiAnalysisData = {
+    analysisCount: 0,
+    parkinsonLevel: 0,
+    parkinsonDescription: '',
+    confidence: 0,
+    recommendation: '',
+    recommendedResistance: 0,
+    lastUpdateTime: null
+};
+
 // DOM 元素
 const connectBtn = document.getElementById('connectBtn');
 const disconnectBtn = document.getElementById('disconnectBtn');
@@ -155,11 +166,56 @@ function parseSerialData(dataString) {
             const trimmedLine = line.trim();
             if (!trimmedLine) continue;
             
-            // 解析JSON格式的數據
-            if (trimmedLine.startsWith('{') && trimmedLine.endsWith('}')) {
+            // 解析AI分析結果
+            if (trimmedLine.includes('=== AI分析結果 ===')) {
+                console.log('檢測到AI分析結果開始');
+                continue;
+            }
+            
+            // 解析帕金森分析數據
+            if (trimmedLine.startsWith('分析次數:')) {
+                aiAnalysisData.analysisCount = parseInt(trimmedLine.split(':')[1].trim());
+            } else if (trimmedLine.startsWith('帕金森等級:')) {
+                const levelText = trimmedLine.split(':')[1].trim();
+                const levelMatch = levelText.match(/(\d+)\s*\(([^)]+)\)/);
+                if (levelMatch) {
+                    aiAnalysisData.parkinsonLevel = parseInt(levelMatch[1]);
+                    aiAnalysisData.parkinsonDescription = levelMatch[2];
+                }
+            } else if (trimmedLine.startsWith('置信度:')) {
+                const confidenceText = trimmedLine.split(':')[1].trim();
+                aiAnalysisData.confidence = parseFloat(confidenceText.replace('%', ''));
+            } else if (trimmedLine.startsWith('訓練建議:')) {
+                aiAnalysisData.recommendation = trimmedLine.split(':')[1].trim();
+            } else if (trimmedLine.startsWith('建議阻力設定:')) {
+                const resistanceText = trimmedLine.split(':')[1].trim();
+                aiAnalysisData.recommendedResistance = parseInt(resistanceText.replace('度', ''));
+            } else if (trimmedLine.includes('==================')) {
+                aiAnalysisData.lastUpdateTime = new Date().toLocaleString();
+                updateAIDisplay();
+                console.log('AI分析結果解析完成:', aiAnalysisData);
+            }
+            
+            // 解析傳感器數據格式: DATA,finger1,finger2,finger3,finger4,finger5,emg,imu_x,imu_y,imu_z
+            else if (trimmedLine.startsWith('DATA,')) {
+                const values = trimmedLine.substring(5).split(',').map(v => parseFloat(v));
+                if (values.length >= 9) {
+                    // 更新手指數據 (前5個值)
+                    sensorData.fingers = values.slice(0, 5);
+                    
+                    // 更新IMU數據 (後3個值)
+                    sensorData.accelerometer.x = values[6];
+                    sensorData.accelerometer.y = values[7];
+                    sensorData.accelerometer.z = values[8];
+                    
+                    updateAllDisplays();
+                }
+            }
+            
+            // 解析JSON格式的數據 (向後兼容)
+            else if (trimmedLine.startsWith('{') && trimmedLine.endsWith('}')) {
                 const jsonData = JSON.parse(trimmedLine);
                 
-                // 更新感測器數據
                 if (jsonData.fingers) {
                     sensorData.fingers = jsonData.fingers;
                 }
@@ -173,14 +229,13 @@ function parseSerialData(dataString) {
                     sensorData.magnetometer = jsonData.magnetometer;
                 }
                 
-                // 更新顯示
                 updateAllDisplays();
             }
-            // 解析CSV格式的數據 (備用格式)
-            else if (trimmedLine.includes(',')) {
+            
+            // 解析簡單CSV格式的數據 (備用格式)
+            else if (trimmedLine.includes(',') && !trimmedLine.startsWith('DATA')) {
                 const values = trimmedLine.split(',').map(v => parseFloat(v));
                 if (values.length >= 5) {
-                    // 假設前5個值是手指數據
                     sensorData.fingers = values.slice(0, 5);
                     updateAllDisplays();
                 }
@@ -265,6 +320,38 @@ function updateIMUDisplay(sensorType, x, y, z) {
     imuElements[prefix + 'Z'].textContent = z.toFixed(2);
 }
 
+// 更新AI分析結果顯示
+function updateAIDisplay() {
+    const analysisCountElement = document.getElementById('analysisCount');
+    const parkinsonLevelElement = document.getElementById('parkinsonLevel');
+    const parkinsonDescElement = document.getElementById('parkinsonDescription');
+    const confidenceElement = document.getElementById('confidence');
+    const recommendationElement = document.getElementById('recommendation');
+    const resistanceElement = document.getElementById('recommendedResistance');
+    const lastUpdateElement = document.getElementById('lastUpdate');
+    
+    if (analysisCountElement) analysisCountElement.textContent = aiAnalysisData.analysisCount;
+    if (parkinsonLevelElement) parkinsonLevelElement.textContent = aiAnalysisData.parkinsonLevel;
+    if (parkinsonDescElement) parkinsonDescElement.textContent = aiAnalysisData.parkinsonDescription;
+    if (confidenceElement) confidenceElement.textContent = aiAnalysisData.confidence.toFixed(1) + '%';
+    if (recommendationElement) recommendationElement.textContent = aiAnalysisData.recommendation;
+    if (resistanceElement) resistanceElement.textContent = aiAnalysisData.recommendedResistance + '度';
+    if (lastUpdateElement) lastUpdateElement.textContent = aiAnalysisData.lastUpdateTime || '尚未分析';
+    
+    // 根據帕金森等級更新樣式
+    const levelIndicator = document.getElementById('levelIndicator');
+    if (levelIndicator) {
+        levelIndicator.className = 'level-indicator';
+        if (aiAnalysisData.parkinsonLevel <= 1) {
+            levelIndicator.classList.add('level-normal');
+        } else if (aiAnalysisData.parkinsonLevel <= 3) {
+            levelIndicator.classList.add('level-mild');
+        } else {
+            levelIndicator.classList.add('level-severe');
+        }
+    }
+}
+
 // 重置所有顯示
 function resetDisplays() {
     // 重置手指數據
@@ -282,6 +369,18 @@ function resetDisplays() {
     Object.values(imuElements).forEach(element => {
         element.textContent = '0.00';
     });
+    
+    // 重置AI分析數據
+    aiAnalysisData = {
+        analysisCount: 0,
+        parkinsonLevel: 0,
+        parkinsonDescription: '',
+        confidence: 0,
+        recommendation: '',
+        recommendedResistance: 0,
+        lastUpdateTime: null
+    };
+    updateAIDisplay();
     
     // 重置感測器數據
     sensorData = {
@@ -335,6 +434,7 @@ document.addEventListener('DOMContentLoaded', function() {
         initialize3DHandModel();
         setupTestAnimationButton();
         setupResetHandButton();
+        setupRobotDemoButton(); // 新增機械手展示功能
     }, 1000);
 });
 
@@ -405,6 +505,100 @@ function setupResetHandButton() {
     }
 }
 
+// 機械手展示按鈕事件
+function setupRobotDemoButton() {
+    const robotBtn = document.getElementById('robotDemoBtn');
+    if (robotBtn) {
+        robotBtn.addEventListener('click', () => {
+            if (hand3DInitialized && window.hand3D) {
+                performRobotDemo();
+            } else {
+                alert('3D手部模型尚未初始化');
+            }
+        });
+    }
+}
+
+// 機械手展示動畫
+function performRobotDemo() {
+    if (!window.hand3D) return;
+    
+    console.log('🤖 開始機械手展示...');
+    
+    let demoStep = 0;
+    const demoSteps = [
+        // 步驟1：所有手指緩慢彎曲
+        () => {
+            console.log('機械手激活...');
+            for (let i = 0; i < 5; i++) {
+                window.hand3D.updateFingerBending(i, 700 + Math.random() * 200);
+            }
+        },
+        // 步驟2：展開手掌
+        () => {
+            console.log('系統重置...');
+            for (let i = 0; i < 5; i++) {
+                window.hand3D.updateFingerBending(i, 0);
+            }
+        },
+        // 步驟3-7：逐個彎曲手指
+        () => {
+            console.log('關節測試：拇指');
+            window.hand3D.updateFingerBending(0, 800);
+        },
+        () => {
+            console.log('關節測試：食指');
+            window.hand3D.updateFingerBending(1, 800);
+        },
+        () => {
+            console.log('關節測試：中指');
+            window.hand3D.updateFingerBending(2, 800);
+        },
+        () => {
+            console.log('關節測試：無名指');
+            window.hand3D.updateFingerBending(3, 800);
+        },
+        () => {
+            console.log('關節測試：小指');
+            window.hand3D.updateFingerBending(4, 800);
+        },
+        // 步驟8：機械握拳
+        () => {
+            console.log('執行握拳程序...');
+            window.hand3D.updateFingerBending(0, 600);
+            window.hand3D.updateFingerBending(1, 900);
+            window.hand3D.updateFingerBending(2, 950);
+            window.hand3D.updateFingerBending(3, 900);
+            window.hand3D.updateFingerBending(4, 850);
+        },
+        // 步驟9：最終展示姿態
+        () => {
+            console.log('展示模式...');
+            window.hand3D.updateFingerBending(0, 300);
+            window.hand3D.updateFingerBending(1, 150);
+            window.hand3D.updateFingerBending(2, 200);
+            window.hand3D.updateFingerBending(3, 400);
+            window.hand3D.updateFingerBending(4, 500);
+        }
+    ];
+    
+    const demoInterval = setInterval(() => {
+        if (demoStep < demoSteps.length) {
+            demoSteps[demoStep]();
+            demoStep++;
+        } else {
+            clearInterval(demoInterval);
+            // 3秒後重置
+            setTimeout(() => {
+                console.log('機械手系統待機');
+                for (let i = 0; i < 5; i++) {
+                    window.hand3D.updateFingerBending(i, 0);
+                }
+            }, 3000);
+        }
+    }, 1000);
+}
+
 // 修改原有的updateAllDisplays函數以包含3D模型更新
 const originalUpdateAllDisplays = updateAllDisplays;
 updateAllDisplays = function() {
@@ -435,4 +629,29 @@ window.addEventListener('unhandledrejection', function(event) {
     console.error('未處理的Promise拒絕:', event.reason);
     event.preventDefault();
 });
+
+// 全域API函數
+window.getFingerData = function() {
+    return sensorData.fingers;
+};
+
+window.getIMUData = function() {
+    return {
+        accelerometer: sensorData.accelerometer,
+        gyroscope: sensorData.gyroscope,
+        magnetometer: sensorData.magnetometer
+    };
+};
+
+window.getAIAnalysisData = function() {
+    return aiAnalysisData;
+};
+
+window.getAllSensorData = function() {
+    return {
+        ...sensorData,
+        isConnected: isConnected,
+        aiAnalysis: aiAnalysisData
+    };
+};
 

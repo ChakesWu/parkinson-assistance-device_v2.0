@@ -57,8 +57,12 @@ bool buttonPressed = false;
 unsigned long lastButtonTime = 0;
 unsigned long lastInferenceTime = 0;
 unsigned long lastSampleTime = 0;
+unsigned long lastWebDataTime = 0;       // 新增：上次發送網頁數據時間
 unsigned long analysisCompleteTime = 0;  // 新增：分析完成時間
 int analysisCount = 0;                   // 新增：分析次數計數器
+
+// 網頁數據發送間隔 (毫秒)
+const unsigned long WEB_DATA_INTERVAL = 50;  // 20Hz，適合3D動畫顯示
 
 // 數據相關
 float sensorBuffer[50][9];  // 緩衝50個時間點的9維數據
@@ -122,6 +126,9 @@ void loop() {
     
     // 處理串口命令
     handleSerialCommands();
+    
+    // *** 新增：持續發送實時數據給網頁 ***
+    sendContinuousWebData();
     
     // 根據當前狀態執行相應功能
     switch (currentState) {
@@ -410,6 +417,8 @@ void performRealTimeAnalysis() {
         // 添加到AI模型緩衝區
         aiModel.addDataPoint(sensorData);
         
+        // 註釋：網頁數據發送已由 sendContinuousWebData() 統一處理
+        
         lastSampleTime = currentTime;
         
         // 顯示數據收集進度
@@ -641,6 +650,94 @@ void displayRealTimeSensorData() {
     Serial.println();
     
     Serial.println("--- 等待中... ---");
+}
+
+void sendContinuousWebData() {
+    // 持續發送實時數據給網頁，不管當前處於什麼狀態
+    unsigned long currentTime = millis();
+    
+    if (currentTime - lastWebDataTime >= WEB_DATA_INTERVAL) {
+        // 讀取當前傳感器數據
+        float sensorData[9];
+        readRawSensorDataForWeb(sensorData);
+        
+        // 發送數據給網頁
+        sendRawDataToWeb(sensorData);
+        
+        lastWebDataTime = currentTime;
+    }
+}
+
+void readRawSensorDataForWeb(float* data) {
+    // 讀取原始傳感器數據供網頁使用（不進行標準化）
+    data[0] = readFingerValue(PIN_PINKY);    // 小指
+    data[1] = readFingerValue(PIN_RING);     // 無名指
+    data[2] = readFingerValue(PIN_MIDDLE);   // 中指
+    data[3] = readFingerValue(PIN_INDEX);    // 食指
+    data[4] = readFingerValue(PIN_THUMB);    // 拇指
+    data[5] = readEMGValue();                // EMG
+    
+    // 讀取IMU數據
+    float x, y, z;
+    IMU.readAcceleration(x, y, z);
+    data[6] = x;
+    data[7] = y;
+    data[8] = z;
+}
+
+void sendRawDataToWeb(float* rawData) {
+    // 發送原始數據給網頁，格式: DATA,finger1,finger2,finger3,finger4,finger5,emg,imu_x,imu_y,imu_z
+    Serial.print("DATA");
+    
+    // 手指數據 (原始電位器數值 0-1023)
+    for (int i = 0; i < 5; i++) {
+        Serial.print(",");
+        Serial.print((int)constrain(rawData[i], 0, 1023));
+    }
+    
+    // EMG數據
+    Serial.print(",");
+    Serial.print((int)constrain(rawData[5], 0, 1023));
+    
+    // IMU數據
+    Serial.print(",");
+    Serial.print(rawData[6], 3);  // X軸
+    Serial.print(",");
+    Serial.print(rawData[7], 3);  // Y軸
+    Serial.print(",");
+    Serial.print(rawData[8], 3);  // Z軸
+    
+    Serial.println();
+}
+
+void sendRealtimeDataToWeb(float* normalizedData) {
+    // 將標準化數據轉換為原始數值供網頁3D模型使用
+    // 格式: DATA,finger1,finger2,finger3,finger4,finger5,emg,imu_x,imu_y,imu_z
+    
+    Serial.print("DATA");
+    
+    // 手指數據 (轉換回原始電位器數值 0-1023)
+    for (int i = 0; i < 5; i++) {
+        Serial.print(",");
+        // 將標準化數據轉換回原始數值範圍
+        float originalValue = normalizedData[i] + fingerBaseline[i];
+        Serial.print((int)constrain(originalValue, 0, 1023));
+    }
+    
+    // EMG數據
+    Serial.print(",");
+    float originalEMG = normalizedData[5] + emgBaseline;
+    Serial.print((int)constrain(originalEMG, 0, 1023));
+    
+    // IMU數據 (直接輸出加速度計數值)
+    Serial.print(",");
+    Serial.print(normalizedData[6], 3);  // X軸
+    Serial.print(",");
+    Serial.print(normalizedData[7], 3);  // Y軸
+    Serial.print(",");
+    Serial.print(normalizedData[8], 3);  // Z軸
+    
+    Serial.println();
 }
 
 void blinkError() {
