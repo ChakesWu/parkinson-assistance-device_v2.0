@@ -183,3 +183,193 @@
     margin-top: 8px !important;
     text-align: center;
 }
+
+/* Arduino控制區域樣式 */
+.arduino-controls {
+    margin-top: 20px;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+}
+
+.arduino-controls h3 {
+    margin: 0 0 15px 0;
+    color: #333;
+    font-size: 1.1em;
+}
+
+.control-buttons {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.command-buttons {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.cmd-btn {
+    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    font-size: 13px;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3);
+}
+
+.cmd-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(40, 167, 69, 0.4);
+    background: linear-gradient(135deg, #20c997 0%, #28a745 100%);
+}
+
+.cmd-btn:disabled {
+    background: #6c757d;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.debug-info {
+    margin-top: 10px;
+}
+
+.debug-text {
+    margin: 0;
+    color: #6c757d;
+    font-size: 12px;
+    font-style: italic;
+    text-align: center;
+}
+
+/* 詳細分析結果樣式 */
+.detailed-analysis-section {
+    margin-top: 25px;
+    padding: 20px;
+    background: linear-gradient(135deg, #0a1628, #1a202c);
+    border-radius: 15px;
+    border: 2px solid #2d3748;
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
+    animation: slideInUp 0.6s ease-out;
+}
+
+.detailed-analysis-section h3 {
+    color: #63b3ed;
+    margin-bottom: 20px;
+    text-align: center;
+    font-size: 1.3em;
+    text-shadow: 0 2px 4px rgba(99, 179, 237, 0.3);
+}
+
+.analysis-subsection {
+    margin-bottom: 20px;
+    padding: 15px;
+    background: rgba(45, 55, 72, 0.6);
+    border-radius: 10px;
+    border-left: 4px solid #4299e1;
+    animation: fadeInLeft 0.5s ease-out;
+}
+
+.analysis-subsection h4 {
+    color: #90cdf4;
+    margin-bottom: 12px;
+    font-size: 1.1em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.analysis-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.analysis-list li {
+    padding: 8px 12px;
+    margin: 6px 0;
+    background: rgba(26, 32, 44, 0.7);
+    border-radius: 6px;
+    border-left: 3px solid #68d391;
+    color: #e2e8f0;
+    font-size: 0.95em;
+    line-height: 1.4;
+    transition: all 0.3s ease;
+}
+
+.analysis-list li:hover {
+    background: rgba(26, 32, 44, 0.9);
+    transform: translateX(5px);
+}
+
+/* 特殊內容樣式 */
+.analysis-list li[data-type="warning"] {
+    border-left-color: #fc8181;
+    background: rgba(153, 27, 27, 0.2);
+}
+
+.analysis-list li[data-type="caution"] {
+    border-left-color: #f6ad55;
+    background: rgba(154, 77, 27, 0.2);
+}
+
+.analysis-list li[data-type="success"] {
+    border-left-color: #68d391;
+    background: rgba(22, 101, 52, 0.2);
+}
+
+/* 動畫效果 */
+@keyframes slideInUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes fadeInLeft {
+    from {
+        opacity: 0;
+        transform: translateX(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* 響應式設計 */
+@media (max-width: 768px) {
+    .control-buttons {
+        flex-direction: column;
+    }
+    
+    .command-buttons {
+        grid-template-columns: 1fr;
+    }
+    
+    .detailed-analysis-section {
+        padding: 15px;
+        margin-top: 20px;
+    }
+    
+    .analysis-subsection {
+        padding: 12px;
+    }
+    
+    .analysis-list li {
+        font-size: 0.9em;
+        padding: 6px 10px;
+    }
+}

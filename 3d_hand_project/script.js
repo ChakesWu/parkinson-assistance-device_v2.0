@@ -62,6 +62,17 @@ const imuElements = {
 connectBtn.addEventListener('click', connectToDevice);
 disconnectBtn.addEventListener('click', disconnectFromDevice);
 
+// Arduino控制按鈕
+const calibrateBtn = document.getElementById('calibrateBtn');
+const startAIBtn = document.getElementById('startAIBtn');
+const stopAIBtn = document.getElementById('stopAIBtn');
+const statusBtn = document.getElementById('statusBtn');
+
+calibrateBtn.addEventListener('click', () => sendCommandToArduino('CALIBRATE'));
+startAIBtn.addEventListener('click', () => sendCommandToArduino('AUTO'));
+stopAIBtn.addEventListener('click', () => sendCommandToArduino('STOP'));
+statusBtn.addEventListener('click', () => sendCommandToArduino('STATUS'));
+
 // 連接到串口設備
 async function connectToDevice() {
     try {
@@ -77,6 +88,9 @@ async function connectToDevice() {
         updateConnectionStatus("已連接", true);
         connectBtn.disabled = true;
         disconnectBtn.disabled = false;
+        
+        // 啟用Arduino控制按鈕
+        enableArduinoControls(true);
         
         // 開始讀取數據
         startDataReading();
@@ -95,12 +109,18 @@ async function startDataReading() {
     const reader = serialPort.readable.getReader();
     const decoder = new TextDecoder();
     
+    console.log('開始讀取Arduino數據...');
+    
     try {
         while (isConnected) {
             const { value, done } = await reader.read();
             if (done) break;
             
             const dataString = decoder.decode(value);
+            // 顯示原始數據用於調試
+            if (dataString.trim()) {
+                console.log('收到原始數據:', dataString.trim());
+            }
             parseSerialData(dataString);
         }
     } catch (error) {
@@ -108,6 +128,26 @@ async function startDataReading() {
         onDeviceDisconnected();
     } finally {
         reader.releaseLock();
+    }
+}
+
+// 發送指令到Arduino
+async function sendCommandToArduino(command) {
+    if (!serialPort || !isConnected) {
+        alert('請先連接Arduino設備');
+        return;
+    }
+    
+    const writer = serialPort.writable.getWriter();
+    const encoder = new TextEncoder();
+    
+    try {
+        await writer.write(encoder.encode(command + '\n'));
+        console.log('已發送指令:', command);
+    } catch (error) {
+        console.error('發送指令失敗:', error);
+    } finally {
+        writer.releaseLock();
     }
 }
 
@@ -123,6 +163,9 @@ async function disconnectFromDevice() {
         updateConnectionStatus('未連接', false);
         connectBtn.disabled = false;
         disconnectBtn.disabled = true;
+        
+        // 禁用Arduino控制按鈕
+        enableArduinoControls(false);
         
         // 重置顯示
         resetDisplays();
@@ -143,8 +186,19 @@ function onDeviceDisconnected() {
     connectBtn.disabled = false;
     disconnectBtn.disabled = true;
     
+    // 禁用Arduino控制按鈕
+    enableArduinoControls(false);
+    
     // 重置數據顯示
     resetDisplays();
+}
+
+// 啟用/禁用Arduino控制按鈕
+function enableArduinoControls(enabled) {
+    calibrateBtn.disabled = !enabled;
+    startAIBtn.disabled = !enabled;
+    stopAIBtn.disabled = !enabled;
+    statusBtn.disabled = !enabled;
 }
 
 // 更新連接狀態顯示
@@ -166,9 +220,15 @@ function parseSerialData(dataString) {
             const trimmedLine = line.trim();
             if (!trimmedLine) continue;
             
-            // 解析AI分析結果
-            if (trimmedLine.includes('=== AI分析結果 ===')) {
-                console.log('檢測到AI分析結果開始');
+            // 解析AI分析結果 - 支持新的详细格式
+            if (trimmedLine.includes('=== AI分析結果 ===') || trimmedLine.includes('深度AI分析報告')) {
+                console.log('🤖 檢測到AI分析結果開始 (详细模式)');
+                aiAnalysisData.detailedAnalysis = {
+                    symptomAnalysis: [],
+                    rehabilitationPlan: [],
+                    lifestyleSuggestions: [],
+                    nextCheckup: []
+                };
                 continue;
             }
             
@@ -190,24 +250,85 @@ function parseSerialData(dataString) {
             } else if (trimmedLine.startsWith('建議阻力設定:')) {
                 const resistanceText = trimmedLine.split(':')[1].trim();
                 aiAnalysisData.recommendedResistance = parseInt(resistanceText.replace('度', ''));
-            } else if (trimmedLine.includes('==================')) {
+            } else if (trimmedLine.includes('==================') || trimmedLine.includes('🔍===============================🔍')) {
                 aiAnalysisData.lastUpdateTime = new Date().toLocaleString();
                 updateAIDisplay();
                 console.log('AI分析結果解析完成:', aiAnalysisData);
             }
             
-            // 解析傳感器數據格式: DATA,finger1,finger2,finger3,finger4,finger5,emg,imu_x,imu_y,imu_z
+            // 解析詳細分析部分
+            else if (trimmedLine.includes('🔬 症狀詳細分析:')) {
+                console.log('📊 開始解析症狀分析');
+                aiAnalysisData.currentSection = 'symptom';
+            } else if (trimmedLine.includes('💪 個性化康復計劃:')) {
+                console.log('💪 開始解析康復計劃');
+                aiAnalysisData.currentSection = 'rehabilitation';
+            } else if (trimmedLine.includes('🌟 生活方式建議:')) {
+                console.log('🌟 開始解析生活方式建議');
+                aiAnalysisData.currentSection = 'lifestyle';
+            } else if (trimmedLine.includes('📅 下次檢測建議:')) {
+                console.log('📅 開始解析下次檢測建議');
+                aiAnalysisData.currentSection = 'nextCheckup';
+            }
+            
+            // 解析各部分的詳細內容
+            else if (trimmedLine.startsWith('  ') && aiAnalysisData.currentSection && aiAnalysisData.detailedAnalysis) {
+                const content = trimmedLine.trim();
+                if (content && !content.includes('建議間隔') && !content.includes('重點關注')) {
+                    switch (aiAnalysisData.currentSection) {
+                        case 'symptom':
+                            aiAnalysisData.detailedAnalysis.symptomAnalysis.push(content);
+                            break;
+                        case 'rehabilitation':
+                            aiAnalysisData.detailedAnalysis.rehabilitationPlan.push(content);
+                            break;
+                        case 'lifestyle':
+                            aiAnalysisData.detailedAnalysis.lifestyleSuggestions.push(content);
+                            break;
+                        case 'nextCheckup':
+                            aiAnalysisData.detailedAnalysis.nextCheckup.push(content);
+                            break;
+                    }
+                }
+            }
+            
+            // 解析傳感器數據格式: DATA,finger1,finger2,finger3,finger4,finger5,emg,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,mag_x,mag_y,mag_z
             else if (trimmedLine.startsWith('DATA,')) {
                 const values = trimmedLine.substring(5).split(',').map(v => parseFloat(v));
-                if (values.length >= 9) {
+                if (values.length >= 15) {
                     // 更新手指數據 (前5個值)
                     sensorData.fingers = values.slice(0, 5);
                     
-                    // 更新IMU數據 (後3個值)
+                    // 更新完整IMU數據
                     sensorData.accelerometer.x = values[6];
                     sensorData.accelerometer.y = values[7];
                     sensorData.accelerometer.z = values[8];
                     
+                    sensorData.gyroscope.x = values[9];
+                    sensorData.gyroscope.y = values[10];
+                    sensorData.gyroscope.z = values[11];
+                    
+                    sensorData.magnetometer.x = values[12];
+                    sensorData.magnetometer.y = values[13];
+                    sensorData.magnetometer.z = values[14];
+                    
+                    updateAllDisplays();
+                    
+                    // 定期顯示數據狀態（避免控制台刷屏）
+                    if (Math.random() < 0.01) { // 1%的概率顯示
+                        console.log('✅ 完整IMU數據正常更新:', {
+                            fingers: sensorData.fingers.map(v => Math.round(v)),
+                            accel: sensorData.accelerometer,
+                            gyro: sensorData.gyroscope,
+                            mag: sensorData.magnetometer
+                        });
+                    }
+                } else if (values.length >= 9) {
+                    // 向後兼容：處理只有9個值的舊格式
+                    sensorData.fingers = values.slice(0, 5);
+                    sensorData.accelerometer.x = values[6];
+                    sensorData.accelerometer.y = values[7];
+                    sensorData.accelerometer.z = values[8];
                     updateAllDisplays();
                 }
             }
@@ -350,6 +471,74 @@ function updateAIDisplay() {
             levelIndicator.classList.add('level-severe');
         }
     }
+    
+    // 更新詳細分析結果
+    updateDetailedAnalysisDisplay();
+}
+
+// 更新詳細分析結果顯示
+function updateDetailedAnalysisDisplay() {
+    if (!aiAnalysisData.detailedAnalysis) return;
+    
+    const detailedSection = document.getElementById('detailedAnalysisSection');
+    if (!detailedSection) return;
+    
+    // 顯示詳細分析區域
+    detailedSection.style.display = 'block';
+    
+    // 更新症狀分析
+    updateAnalysisSubsection('symptomAnalysisSection', 'symptomAnalysisList', 
+        aiAnalysisData.detailedAnalysis.symptomAnalysis, '症狀分析');
+    
+    // 更新康復計劃
+    updateAnalysisSubsection('rehabilitationPlanSection', 'rehabilitationPlanList', 
+        aiAnalysisData.detailedAnalysis.rehabilitationPlan, '康復計劃');
+    
+    // 更新生活建議
+    updateAnalysisSubsection('lifestyleSuggestionsSection', 'lifestyleSuggestionsList', 
+        aiAnalysisData.detailedAnalysis.lifestyleSuggestions, '生活建議');
+    
+    // 更新下次檢測建議
+    updateAnalysisSubsection('nextCheckupSection', 'nextCheckupList', 
+        aiAnalysisData.detailedAnalysis.nextCheckup, '下次檢測');
+    
+    console.log('✅ 详细分析结果已更新到UI');
+}
+
+// 更新分析子区域
+function updateAnalysisSubsection(sectionId, listId, data, sectionName) {
+    const section = document.getElementById(sectionId);
+    const list = document.getElementById(listId);
+    
+    if (!section || !list || !data || data.length === 0) {
+        if (section) section.style.display = 'none';
+        return;
+    }
+    
+    // 顯示子區域
+    section.style.display = 'block';
+    
+    // 清空現有內容
+    list.innerHTML = '';
+    
+    // 添加新內容
+    data.forEach(item => {
+        const li = document.createElement('li');
+        li.textContent = item;
+        
+        // 根據內容設置樣式
+        if (item.includes('🚨') || item.includes('嚴重') || item.includes('緊急')) {
+            li.setAttribute('data-type', 'warning');
+        } else if (item.includes('⚠️') || item.includes('輕微') || item.includes('注意')) {
+            li.setAttribute('data-type', 'caution');
+        } else if (item.includes('✅') || item.includes('優秀') || item.includes('正常')) {
+            li.setAttribute('data-type', 'success');
+        }
+        
+        list.appendChild(li);
+    });
+    
+    console.log(`📊 ${sectionName}已更新，共${data.length}項`);
 }
 
 // 重置所有顯示
@@ -441,31 +630,48 @@ document.addEventListener('DOMContentLoaded', function() {
 // 3D手部模型相關功能
 let hand3DInitialized = false;
 
-// 初始化3D手部模型
+// 初始化简化3D手部模型
 function initialize3DHandModel() {
     if (typeof THREE === 'undefined') {
         console.error('Three.js 未載入');
         return;
     }
     
-    if (typeof initHand3D === 'undefined') {
-        console.error('Hand3D 類未載入');
+    if (typeof initSimpleHand3D === 'undefined') {
+        console.error('SimpleHand3D 類未載入');
         return;
     }
     
     try {
-        initHand3D();
-        hand3DInitialized = true;
+        const success = initSimpleHand3D();
+        if (success) {
+            hand3DInitialized = true;
+            window.hand3D = window.simpleHand3D;
+            
+            // 隱藏載入提示
+            const loadingElement = document.querySelector('.hand3d-loading');
+            if (loadingElement) {
+                loadingElement.style.display = 'none';
+            }
+            
+            console.log('✅ 简化3D机械手初始化成功');
+        } else {
+            throw new Error('简化3D模型初始化返回失败');
+        }
+    } catch (error) {
+        console.error('❌ 简化3D手部模型初始化失敗:', error);
         
-        // 隱藏載入提示
+        // 更强的错误恢复
+        hand3DInitialized = false;
+        window.hand3D = null;
+        
+        // 显示备用信息
         const loadingElement = document.querySelector('.hand3d-loading');
         if (loadingElement) {
-            loadingElement.style.display = 'none';
+            loadingElement.innerHTML = '❌ 3D模型加载失败，请刷新页面重试';
+            loadingElement.style.display = 'block';
+            loadingElement.style.color = '#dc3545';
         }
-        
-        console.log('3D手部模型初始化成功');
-    } catch (error) {
-        console.error('3D手部模型初始化失敗:', error);
     }
 }
 
@@ -474,8 +680,9 @@ function setupTestAnimationButton() {
     const testBtn = document.getElementById('testAnimationBtn');
     if (testBtn) {
         testBtn.addEventListener('click', () => {
-            if (hand3DInitialized && window.hand3D) {
-                window.hand3D.testFingerAnimation();
+            if (hand3DInitialized && window.simpleHand3D) {
+                window.simpleHand3D.testFingerAnimation();
+                console.log('🤖 开始测试机械手动画');
             } else {
                 alert('3D手部模型尚未初始化');
             }
@@ -488,16 +695,18 @@ function setupResetHandButton() {
     const resetBtn = document.getElementById('resetHandBtn');
     if (resetBtn) {
         resetBtn.addEventListener('click', () => {
-            if (hand3DInitialized && window.hand3D) {
+            if (hand3DInitialized && window.simpleHand3D) {
                 // 重置所有手指到伸直狀態
                 for (let i = 0; i < 5; i++) {
-                    window.hand3D.updateFingerBending(i, 0);
+                    window.simpleHand3D.updateFingerBending(i, 0);
                 }
                 
                 // 重置手部旋轉
-                if (window.hand3D.handModel) {
-                    window.hand3D.handModel.rotation.set(0, 0, 0);
+                if (window.simpleHand3D.handGroup) {
+                    window.simpleHand3D.handGroup.rotation.set(0, 0, 0);
                 }
+                
+                console.log('🔄 3D机械手已重置');
             } else {
                 alert('3D手部模型尚未初始化');
             }
@@ -510,7 +719,7 @@ function setupRobotDemoButton() {
     const robotBtn = document.getElementById('robotDemoBtn');
     if (robotBtn) {
         robotBtn.addEventListener('click', () => {
-            if (hand3DInitialized && window.hand3D) {
+            if (hand3DInitialized && window.simpleHand3D) {
                 performRobotDemo();
             } else {
                 alert('3D手部模型尚未初始化');
@@ -521,7 +730,7 @@ function setupRobotDemoButton() {
 
 // 機械手展示動畫
 function performRobotDemo() {
-    if (!window.hand3D) return;
+    if (!window.simpleHand3D) return;
     
     console.log('🤖 開始機械手展示...');
     
@@ -531,54 +740,54 @@ function performRobotDemo() {
         () => {
             console.log('機械手激活...');
             for (let i = 0; i < 5; i++) {
-                window.hand3D.updateFingerBending(i, 700 + Math.random() * 200);
+                window.simpleHand3D.updateFingerBending(i, 700 + Math.random() * 200);
             }
         },
         // 步驟2：展開手掌
         () => {
             console.log('系統重置...');
             for (let i = 0; i < 5; i++) {
-                window.hand3D.updateFingerBending(i, 0);
+                window.simpleHand3D.updateFingerBending(i, 0);
             }
         },
         // 步驟3-7：逐個彎曲手指
         () => {
             console.log('關節測試：拇指');
-            window.hand3D.updateFingerBending(0, 800);
+            window.simpleHand3D.updateFingerBending(0, 800);
         },
         () => {
             console.log('關節測試：食指');
-            window.hand3D.updateFingerBending(1, 800);
+            window.simpleHand3D.updateFingerBending(1, 800);
         },
         () => {
             console.log('關節測試：中指');
-            window.hand3D.updateFingerBending(2, 800);
+            window.simpleHand3D.updateFingerBending(2, 800);
         },
         () => {
             console.log('關節測試：無名指');
-            window.hand3D.updateFingerBending(3, 800);
+            window.simpleHand3D.updateFingerBending(3, 800);
         },
         () => {
             console.log('關節測試：小指');
-            window.hand3D.updateFingerBending(4, 800);
+            window.simpleHand3D.updateFingerBending(4, 800);
         },
         // 步驟8：機械握拳
         () => {
             console.log('執行握拳程序...');
-            window.hand3D.updateFingerBending(0, 600);
-            window.hand3D.updateFingerBending(1, 900);
-            window.hand3D.updateFingerBending(2, 950);
-            window.hand3D.updateFingerBending(3, 900);
-            window.hand3D.updateFingerBending(4, 850);
+            window.simpleHand3D.updateFingerBending(0, 600);
+            window.simpleHand3D.updateFingerBending(1, 900);
+            window.simpleHand3D.updateFingerBending(2, 950);
+            window.simpleHand3D.updateFingerBending(3, 900);
+            window.simpleHand3D.updateFingerBending(4, 850);
         },
         // 步驟9：最終展示姿態
         () => {
             console.log('展示模式...');
-            window.hand3D.updateFingerBending(0, 300);
-            window.hand3D.updateFingerBending(1, 150);
-            window.hand3D.updateFingerBending(2, 200);
-            window.hand3D.updateFingerBending(3, 400);
-            window.hand3D.updateFingerBending(4, 500);
+            window.simpleHand3D.updateFingerBending(0, 300);
+            window.simpleHand3D.updateFingerBending(1, 150);
+            window.simpleHand3D.updateFingerBending(2, 200);
+            window.simpleHand3D.updateFingerBending(3, 400);
+            window.simpleHand3D.updateFingerBending(4, 500);
         }
     ];
     
@@ -592,7 +801,7 @@ function performRobotDemo() {
             setTimeout(() => {
                 console.log('機械手系統待機');
                 for (let i = 0; i < 5; i++) {
-                    window.hand3D.updateFingerBending(i, 0);
+                    window.simpleHand3D.updateFingerBending(i, 0);
                 }
             }, 3000);
         }
@@ -602,21 +811,47 @@ function performRobotDemo() {
 // 修改原有的updateAllDisplays函數以包含3D模型更新
 const originalUpdateAllDisplays = updateAllDisplays;
 updateAllDisplays = function() {
-    // 調用原有的更新函數
-    for (let i = 0; i < 5; i++) {
-        updateFingerDisplay(i, sensorData.fingers[i]);
+    try {
+        // 調用原有的更新函數
+        for (let i = 0; i < 5; i++) {
+            updateFingerDisplay(i, sensorData.fingers[i]);
+        }
+        
+        // 更新IMU顯示
+        updateIMUDisplay('accelerometer', sensorData.accelerometer.x, sensorData.accelerometer.y, sensorData.accelerometer.z);
+        updateIMUDisplay('gyroscope', sensorData.gyroscope.x, sensorData.gyroscope.y, sensorData.gyroscope.z);
+        updateIMUDisplay('magnetometer', sensorData.magnetometer.x, sensorData.magnetometer.y, sensorData.magnetometer.z);
+        
+        // 更新3D手部模型（帶錯誤恢復）
+        update3DHandModel();
+        
+    } catch (error) {
+        console.error('❌ 顯示更新失敗:', error);
+    }
+};
+
+// 安全的3D模型更新函數
+function update3DHandModel() {
+    if (!hand3DInitialized || !window.simpleHand3D) {
+        return; // 靜默跳過，避免控制台刷屏
     }
     
-    // 更新IMU顯示
-    updateIMUDisplay('accelerometer', sensorData.accelerometer.x, sensorData.accelerometer.y, sensorData.accelerometer.z);
-    updateIMUDisplay('gyroscope', sensorData.gyroscope.x, sensorData.gyroscope.y, sensorData.gyroscope.z);
-    updateIMUDisplay('magnetometer', sensorData.magnetometer.x, sensorData.magnetometer.y, sensorData.magnetometer.z);
-    
-    // 更新3D手部模型
-    if (hand3DInitialized && window.hand3D) {
-        window.hand3D.updateFromSensorData(sensorData);
+    try {
+        // 驗證數據有效性
+        if (sensorData.fingers && sensorData.fingers.length >= 5) {
+            window.simpleHand3D.updateFromSensorData(sensorData);
+        }
+    } catch (error) {
+        console.error('❌ 简化3D模型更新失敗:', error);
+        
+        // 標記需要重新初始化
+        hand3DInitialized = false;
+        console.log('🔄 將在3秒後重新初始化简化3D模型...');
+        setTimeout(() => {
+            initialize3DHandModel();
+        }, 3000);
     }
-};;
+}
 
 
 // 錯誤處理

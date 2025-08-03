@@ -36,7 +36,7 @@
 const unsigned long SAMPLE_RATE = 100;        // 採樣間隔(ms)
 const unsigned long BASELINE_DURATION = 2000;  // 校準時長(ms)
 const unsigned long INFERENCE_INTERVAL = 5000; // 推理間隔(ms)
-const unsigned long AUTO_RESTART_DELAY = 3000; // 自動重啟延遲(ms)
+// AUTO_RESTART_DELAY 已移除 - 單次分析模式不需要自動重啟
 
 // 全局對象
 Servo rehabServo;
@@ -49,7 +49,7 @@ enum SystemState {
   STATE_COLLECTING,
   STATE_TRAINING,
   STATE_REAL_TIME_ANALYSIS,
-  STATE_WAITING_RESTART  // 新增：等待自動重啟狀態
+      // STATE_WAITING_RESTART 已移除 - 單次分析模式不需要自動重啟
 };
 
 SystemState currentState = STATE_IDLE;
@@ -58,7 +58,7 @@ unsigned long lastButtonTime = 0;
 unsigned long lastInferenceTime = 0;
 unsigned long lastSampleTime = 0;
 unsigned long lastWebDataTime = 0;       // 新增：上次發送網頁數據時間
-unsigned long analysisCompleteTime = 0;  // 新增：分析完成時間
+// analysisCompleteTime 已移除 - 單次分析模式不需要自動重啟
 int analysisCount = 0;                   // 新增：分析次數計數器
 
 // 網頁數據發送間隔 (毫秒)
@@ -149,12 +149,10 @@ void loop() {
             break;
             
         case STATE_REAL_TIME_ANALYSIS:
-            performRealTimeAnalysis();
+            performSingleAnalysis();
             break;
             
-        case STATE_WAITING_RESTART:
-            handleAutoRestart();
-            break;
+        // STATE_WAITING_RESTART 已移除 - 單次分析模式不需要自動重啟
     }
     
     delay(10);
@@ -170,7 +168,7 @@ void checkButton() {
         
         // 按鈕切換實時分析模式
         if (currentState == STATE_IDLE) {
-            startRealTimeAnalysis();
+            startSingleAnalysis();
         } else if (currentState == STATE_REAL_TIME_ANALYSIS) {
             stopRealTimeAnalysis();
         }
@@ -199,22 +197,21 @@ void handleSerialCommands() {
             stopRealTimeAnalysis();
             Serial.println("停止自動循環分析");
         } else if (cmd == "AUTO") {
-            startRealTimeAnalysis();
-            Serial.println("重新開始自動循環分析");
+            startSingleAnalysis();
         }
     }
 }
 
-void startRealTimeAnalysis() {
+void startSingleAnalysis() {
     analysisCount++;
     Serial.println("========================================");
-    Serial.print("開始第 ");
+    Serial.print("🧠 開始第 ");
     Serial.print(analysisCount);
-    Serial.println(" 次帕金森症狀分析...");
+    Serial.println(" 次深度帕金森症分析...");
     Serial.println("========================================");
     
     if (!isCalibrated) {
-        Serial.println("開始自動校準...");
+        Serial.println("⚠️  需要先校準，開始自動校準...");
         startCalibration();
         return;
     }
@@ -223,10 +220,14 @@ void startRealTimeAnalysis() {
     lastInferenceTime = millis();
     digitalWrite(PIN_LED_STATUS, HIGH);
     
-    Serial.println("實時分析已啟動");
-    Serial.println("- 系統將持續監測您的動作");
-    Serial.println("- 每5秒進行一次AI分析");
-    Serial.println("- 再次按按鈕停止分析");
+    Serial.println("🔬 單次深度分析已啟動");
+    Serial.println("📊 系統將進行以下分析：");
+    Serial.println("  ▶ 手指靈活性評估");
+    Serial.println("  ▶ 震顫強度測量");
+    Serial.println("  ▶ 運動協調性檢測");
+    Serial.println("  ▶ 個性化康復建議");
+    Serial.println("⏱️  預計分析時間：10-15秒");
+    Serial.println("請保持自然的手部動作...");
 }
 
 void stopRealTimeAnalysis() {
@@ -406,10 +407,10 @@ void performTrainingSequence(int maxResistance, int cycles) {
     currentState = STATE_IDLE;
 }
 
-void performRealTimeAnalysis() {
+void performSingleAnalysis() {
     unsigned long currentTime = millis();
     
-    // 持續收集數據
+    // 持續收集數據用於單次分析
     if (currentTime - lastSampleTime >= SAMPLE_RATE) {
         float sensorData[9];
         readNormalizedSensorData(sensorData);
@@ -424,8 +425,8 @@ void performRealTimeAnalysis() {
         // 顯示數據收集進度
         if (!aiModel.isBufferReady()) {
             static unsigned long lastProgressTime = 0;
-            if (currentTime - lastProgressTime >= 2000) {  // 每2秒顯示一次進度
-                Serial.print("數據收集中... ");
+            if (currentTime - lastProgressTime >= 1500) {  // 每1.5秒顯示一次進度
+                Serial.print("📊 數據收集中... ");
                 Serial.print("進度: ");
                 Serial.print((float)aiModel.getBufferFillLevel() / aiModel.getSequenceLength() * 100, 1);
                 Serial.println("%");
@@ -434,48 +435,189 @@ void performRealTimeAnalysis() {
         }
     }
     
-    // 定期執行推理
+    // 單次分析執行推理
     if (currentTime - lastInferenceTime >= INFERENCE_INTERVAL && aiModel.isBufferReady()) {
         if (aiModel.runInference()) {
             currentParkinsonsLevel = aiModel.getPredictedClass();
             currentConfidence = aiModel.getConfidence();
             hasValidPrediction = true;
             
-            // 輸出分析結果
-            Serial.println();
-            Serial.println("=== AI分析結果 ===");
-            Serial.print("分析次數: ");
-            Serial.println(analysisCount);
-            Serial.print("帕金森等級: ");
-            Serial.print(currentParkinsonsLevel);
-            Serial.print(" (");
-            Serial.print(aiModel.getParkinsonLevelDescription());
-            Serial.println(")");
-            Serial.print("置信度: ");
-            Serial.print(currentConfidence * 100, 1);
-            Serial.println("%");
-            Serial.println("訓練建議: " + aiModel.getRecommendation());
+            // 輸出詳細分析結果
+            outputDetailedAnalysisResults();
             
-            // 自動調整舵機預設值
-            int recommendedResistance = map(currentParkinsonsLevel, 1, 5, 30, 150);
-            Serial.print("建議阻力設定: ");
-            Serial.print(recommendedResistance);
-            Serial.println("度");
-            
-            Serial.println("==================");
-            Serial.println();
-            
-            // 記錄分析完成時間並轉入等待重啟狀態
-            analysisCompleteTime = currentTime;
-            currentState = STATE_WAITING_RESTART;
+            // 分析完成，停止分析模式
+            Serial.println("✅ 單次分析完成，系統返回待機狀態");
+            Serial.println("💡 如需再次分析，請按按鈕或發送 AUTO 命令");
+            currentState = STATE_IDLE;
             digitalWrite(PIN_LED_STATUS, LOW);
-            
-            Serial.print("分析完成，");
-            Serial.print(AUTO_RESTART_DELAY / 1000);
-            Serial.println("秒後自動開始下一次檢測...");
         }
         
         lastInferenceTime = currentTime;
+    }
+}
+
+// 輸出詳細的AI分析結果和康復建議
+void outputDetailedAnalysisResults() {
+    Serial.println();
+    Serial.println("🔍===============================🔍");
+    Serial.println("🧠       深度AI分析報告       🧠");
+    Serial.println("🔍===============================🔍");
+    
+    // 基本分析信息
+    Serial.print("📊 分析編號: #");
+    Serial.println(analysisCount);
+    Serial.print("🎯 帕金森等級: ");
+    Serial.print(currentParkinsonsLevel);
+    Serial.print(" (");
+    Serial.print(aiModel.getParkinsonLevelDescription());
+    Serial.println(")");
+    Serial.print("📈 置信度: ");
+    Serial.print(currentConfidence * 100, 1);
+    Serial.println("%");
+    
+    // 詳細症狀分析
+    Serial.println("\n🔬 症狀詳細分析:");
+    outputSymptomAnalysis();
+    
+    // 個性化康復建議
+    Serial.println("\n💪 個性化康復計劃:");
+    outputRehabilitationPlan();
+    
+    // 設備調整建議
+    Serial.println("\n⚙️  設備調整建議:");
+    int recommendedResistance = map(currentParkinsonsLevel, 1, 5, 30, 150);
+    Serial.print("🔧 建議阻力設定: ");
+    Serial.print(recommendedResistance);
+    Serial.println("度");
+    
+    // 生活方式建議
+    Serial.println("\n🌟 生活方式建議:");
+    outputLifestyleSuggestions();
+    
+    // 下次檢測建議
+    Serial.println("\n📅 下次檢測建議:");
+    outputNextCheckupSuggestions();
+    
+    Serial.println("🔍===============================🔍");
+    Serial.println();
+}
+
+// 症狀詳細分析
+void outputSymptomAnalysis() {
+    switch(currentParkinsonsLevel) {
+        case 1:
+            Serial.println("  ✅ 手指靈活性: 優秀");
+            Serial.println("  ✅ 震顫程度: 幾乎無");
+            Serial.println("  ✅ 運動協調: 正常");
+            Serial.println("  💡 評估: 目前手部功能表現良好");
+            break;
+            
+        case 2:
+            Serial.println("  ⚠️  手指靈活性: 輕微減退");
+            Serial.println("  ⚠️  震顫程度: 偶發性輕微震顫");
+            Serial.println("  ✅ 運動協調: 基本正常");
+            Serial.println("  💡 評估: 建議開始預防性訓練");
+            break;
+            
+        case 3:
+            Serial.println("  ⚠️  手指靈活性: 明顯減退");
+            Serial.println("  ⚠️  震顫程度: 輕度持續震顫");
+            Serial.println("  ⚠️  運動協調: 輕度受影響");
+            Serial.println("  💡 評估: 需要積極的康復訓練");
+            break;
+            
+        case 4:
+            Serial.println("  🚨 手指靈活性: 嚴重減退");
+            Serial.println("  🚨 震顫程度: 中度震顫");
+            Serial.println("  🚨 運動協調: 明顯受損");
+            Serial.println("  💡 評估: 需要專業醫療指導");
+            break;
+            
+        case 5:
+            Serial.println("  🚨 手指靈活性: 極度受限");
+            Serial.println("  🚨 震顫程度: 重度震顫");
+            Serial.println("  🚨 運動協調: 嚴重受損");
+            Serial.println("  💡 評估: 需要立即醫療介入");
+            break;
+    }
+}
+
+// 個性化康復計劃
+void outputRehabilitationPlan() {
+    switch(currentParkinsonsLevel) {
+        case 1:
+            Serial.println("  🏃 有氧運動: 每週3-4次，每次30分鐘");
+            Serial.println("  🤲 手指操: 每日15分鐘精細動作練習");
+            Serial.println("  🎵 音樂治療: 配合節拍進行手部運動");
+            Serial.println("  🧘 冥想放鬆: 每日10分鐘減壓練習");
+            break;
+            
+        case 2:
+            Serial.println("  🤲 抓握訓練: 每日3次，每次10分鐘");
+            Serial.println("  ✍️  書寫練習: 每日練習寫字15分鐘");
+            Serial.println("  🏓 乒乓球: 每週2-3次改善協調性");
+            Serial.println("  💊 營養補充: 建議增加維生素D攝取");
+            break;
+            
+        case 3:
+            Serial.println("  🏋️ 阻力訓練: 使用本設備每日2次");
+            Serial.println("  🎯 精細動作: 拼圖、編織等活動");
+            Serial.println("  🚶 步態訓練: 每日30分鐘規律行走");
+            Serial.println("  💆 按摩療法: 每週2次手部按摩");
+            break;
+            
+        case 4:
+            Serial.println("  🏥 物理治療: 建議每週2-3次專業治療");
+            Serial.println("  🤝 輔助設備: 考慮使用輔助工具");
+            Serial.println("  👨‍⚕️ 醫療監控: 定期檢查調整藥物");
+            Serial.println("  👪 家庭支持: 需要家人協助日常活動");
+            break;
+            
+        case 5:
+            Serial.println("  🚨 緊急醫療: 立即聯繫神經科醫師");
+            Serial.println("  🏥 住院評估: 可能需要住院觀察");
+            Serial.println("  💊 藥物調整: 緊急調整藥物方案");
+            Serial.println("  👨‍⚕️ 專家會診: 多學科團隊評估");
+            break;
+    }
+}
+
+// 生活方式建議
+void outputLifestyleSuggestions() {
+    Serial.println("  🥗 飲食建議: 地中海飲食，多吃抗氧化食物");
+    Serial.println("  💤 睡眠管理: 保持7-8小時優質睡眠");
+    Serial.println("  😊 情緒管理: 保持積極樂觀心態");
+    Serial.println("  🧠 認知訓練: 數獨、閱讀等腦力活動");
+    
+    if (currentParkinsonsLevel >= 3) {
+        Serial.println("  ⚠️  安全措施: 注意防跌倒，使用防滑用品");
+        Serial.println("  📱 應急準備: 隨身攜帶緊急聯絡方式");
+    }
+}
+
+// 下次檢測建議
+void outputNextCheckupSuggestions() {
+    switch(currentParkinsonsLevel) {
+        case 1:
+            Serial.println("  📅 建議間隔: 3-6個月後再次檢測");
+            Serial.println("  🎯 重點關注: 持續保持良好狀態");
+            break;
+            
+        case 2:
+            Serial.println("  📅 建議間隔: 2-3個月後再次檢測");
+            Serial.println("  🎯 重點關注: 監控症狀進展");
+            break;
+            
+        case 3:
+            Serial.println("  📅 建議間隔: 1-2個月後再次檢測");
+            Serial.println("  🎯 重點關注: 康復訓練效果評估");
+            break;
+            
+        case 4:
+        case 5:
+            Serial.println("  📅 建議間隔: 每週檢測追蹤");
+            Serial.println("  🎯 重點關注: 治療效果和症狀變化");
+            break;
     }
 }
 
@@ -583,34 +725,7 @@ void printSystemStatus() {
     Serial.println("================");
 }
 
-void handleAutoRestart() {
-    unsigned long currentTime = millis();
-    
-    // 實時監測傳感器數據
-    static unsigned long lastSensorDisplayTime = 0;
-    if (currentTime - lastSensorDisplayTime >= 1000) {  // 每1秒顯示一次傳感器數據
-        displayRealTimeSensorData();
-        lastSensorDisplayTime = currentTime;
-    }
-    
-    // 檢查是否到了自動重啟時間
-    if (currentTime - analysisCompleteTime >= AUTO_RESTART_DELAY) {
-        // 自動重新開始下一次分析
-        Serial.println("\n========================================");
-        Serial.println("自動重新開始檢測循環");
-        startRealTimeAnalysis();
-    } else {
-        // 顯示倒計時
-        static unsigned long lastCountdownTime = 0;
-        if (currentTime - lastCountdownTime >= 1000) {  // 每秒更新一次
-            unsigned long remaining = (AUTO_RESTART_DELAY - (currentTime - analysisCompleteTime)) / 1000;
-            Serial.print("下次檢測倒計時: ");
-            Serial.print(remaining);
-            Serial.println("秒");
-            lastCountdownTime = currentTime;
-        }
-    }
-}
+// handleAutoRestart 函數已移除 - 單次分析模式不需要自動重啟功能
 
 void displayRealTimeSensorData() {
     Serial.println("--- 實時傳感器數據 ---");
@@ -657,8 +772,8 @@ void sendContinuousWebData() {
     unsigned long currentTime = millis();
     
     if (currentTime - lastWebDataTime >= WEB_DATA_INTERVAL) {
-        // 讀取當前傳感器數據
-        float sensorData[9];
+        // 讀取當前傳感器數據 (15個數值：5手指+EMG+9IMU)
+        float sensorData[15];
         readRawSensorDataForWeb(sensorData);
         
         // 發送數據給網頁
@@ -677,16 +792,42 @@ void readRawSensorDataForWeb(float* data) {
     data[4] = readFingerValue(PIN_THUMB);    // 拇指
     data[5] = readEMGValue();                // EMG
     
-    // 讀取IMU數據
-    float x, y, z;
-    IMU.readAcceleration(x, y, z);
-    data[6] = x;
-    data[7] = y;
-    data[8] = z;
+    // 讀取完整IMU數據
+    float accel_x, accel_y, accel_z;
+    float gyro_x, gyro_y, gyro_z;
+    float mag_x, mag_y, mag_z;
+    
+    // 加速度計
+    IMU.readAcceleration(accel_x, accel_y, accel_z);
+    data[6] = accel_x;
+    data[7] = accel_y;
+    data[8] = accel_z;
+    
+    // 陀螺儀
+    if (IMU.readGyroscope(gyro_x, gyro_y, gyro_z)) {
+        data[9] = gyro_x;
+        data[10] = gyro_y;
+        data[11] = gyro_z;
+    } else {
+        data[9] = 0.0;
+        data[10] = 0.0;
+        data[11] = 0.0;
+    }
+    
+    // 磁力計
+    if (IMU.readMagneticField(mag_x, mag_y, mag_z)) {
+        data[12] = mag_x;
+        data[13] = mag_y;
+        data[14] = mag_z;
+    } else {
+        data[12] = 0.0;
+        data[13] = 0.0;
+        data[14] = 0.0;
+    }
 }
 
 void sendRawDataToWeb(float* rawData) {
-    // 發送原始數據給網頁，格式: DATA,finger1,finger2,finger3,finger4,finger5,emg,imu_x,imu_y,imu_z
+    // 發送完整數據給網頁，格式: DATA,finger1,finger2,finger3,finger4,finger5,emg,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,mag_x,mag_y,mag_z
     Serial.print("DATA");
     
     // 手指數據 (原始電位器數值 0-1023)
@@ -699,13 +840,29 @@ void sendRawDataToWeb(float* rawData) {
     Serial.print(",");
     Serial.print((int)constrain(rawData[5], 0, 1023));
     
-    // IMU數據
+    // 加速度計數據
     Serial.print(",");
-    Serial.print(rawData[6], 3);  // X軸
+    Serial.print(rawData[6], 3);  // Accel X
     Serial.print(",");
-    Serial.print(rawData[7], 3);  // Y軸
+    Serial.print(rawData[7], 3);  // Accel Y
     Serial.print(",");
-    Serial.print(rawData[8], 3);  // Z軸
+    Serial.print(rawData[8], 3);  // Accel Z
+    
+    // 陀螺儀數據
+    Serial.print(",");
+    Serial.print(rawData[9], 3);  // Gyro X
+    Serial.print(",");
+    Serial.print(rawData[10], 3); // Gyro Y
+    Serial.print(",");
+    Serial.print(rawData[11], 3); // Gyro Z
+    
+    // 磁力計數據
+    Serial.print(",");
+    Serial.print(rawData[12], 3); // Mag X
+    Serial.print(",");
+    Serial.print(rawData[13], 3); // Mag Y
+    Serial.print(",");
+    Serial.print(rawData[14], 3); // Mag Z
     
     Serial.println();
 }

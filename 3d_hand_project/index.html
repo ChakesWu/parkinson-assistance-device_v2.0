@@ -24,8 +24,25 @@
                     <span id="connectionStatus">未連接</span>
                 </div>
 
-                <button id="connectBtn" class="connect-btn">連接 Arduino</button>
-                <button id="disconnectBtn" class="disconnect-btn" disabled>斷開連接</button>
+                <div class="control-buttons">
+                    <button id="connectBtn" class="connect-btn">連接 Arduino</button>
+                    <button id="disconnectBtn" class="disconnect-btn" disabled>斷開連接</button>
+                </div>
+                
+                <div class="arduino-controls">
+                    <h3>Arduino 控制</h3>
+                    <div class="command-buttons">
+                        <button id="calibrateBtn" class="cmd-btn" disabled>校準傳感器</button>
+                        <button id="startAIBtn" class="cmd-btn" disabled>開始AI分析</button>
+                        <button id="stopAIBtn" class="cmd-btn" disabled>停止AI分析</button>
+                        <button id="statusBtn" class="cmd-btn" disabled>查看狀態</button>
+                    </div>
+                    <div class="debug-info">
+                        <p class="debug-text">
+                            💡 提示：先點擊"校準傳感器"，然後點擊"開始AI分析"來啟動AI功能
+                        </p>
+                    </div>
+                </div>
             </section>
 
             <!-- 手指彎曲視覺化區域 -->
@@ -185,6 +202,31 @@
                         <h3>訓練建議</h3>
                         <p class="recommendation-text" id="recommendation">請連接設備並開始分析以獲得個性化訓練建議</p>
                     </div>
+                    
+                    <!-- 詳細分析結果區域 -->
+                    <div class="detailed-analysis-section" id="detailedAnalysisSection" style="display: none;">
+                        <h3>🔬 詳細分析報告</h3>
+                        
+                        <div class="analysis-subsection" id="symptomAnalysisSection" style="display: none;">
+                            <h4>📊 症狀分析</h4>
+                            <ul id="symptomAnalysisList" class="analysis-list"></ul>
+                        </div>
+                        
+                        <div class="analysis-subsection" id="rehabilitationPlanSection" style="display: none;">
+                            <h4>💪 康復計劃</h4>
+                            <ul id="rehabilitationPlanList" class="analysis-list"></ul>
+                        </div>
+                        
+                        <div class="analysis-subsection" id="lifestyleSuggestionsSection" style="display: none;">
+                            <h4>🌟 生活建議</h4>
+                            <ul id="lifestyleSuggestionsList" class="analysis-list"></ul>
+                        </div>
+                        
+                        <div class="analysis-subsection" id="nextCheckupSection" style="display: none;">
+                            <h4>📅 下次檢測</h4>
+                            <ul id="nextCheckupList" class="analysis-list"></ul>
+                        </div>
+                    </div>
                 </div>
             </section>
 
@@ -209,7 +251,7 @@
     </div>
 
     <script src="script.js"></script>
-    <script src="hand3d.js"></script>
+    <script src="simple_hand3d.js"></script>
 </body>
 </html>
 
