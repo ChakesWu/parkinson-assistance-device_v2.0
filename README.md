@@ -37,7 +37,7 @@
 
 ### 1. 安裝系統（Windows）
 ```bash
-git clone https://github.com/your-org/parkinson-assistance-device.git
+git clone https://github.com/ChakesWu/parkinson-assistance-device_v2.0.git
 cd parkinson-assistance-device
 install.bat
 ```
@@ -239,3 +239,4 @@ python -c "from python.deployment.model_quantization import *; main()"
 ---
 
 如果你有其他排版偏好或希望突出某些內容，請再告訴我！
+
