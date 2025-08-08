@@ -1,0 +1,114 @@
+/* Background Gradient Animation Styles */
+.background-gradient-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: -1;
+    overflow: hidden;
+    background: linear-gradient(40deg, rgb(108, 0, 162), rgb(0, 17, 82));
+}
+
+.gradients-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    filter: blur(40px);
+    opacity: 0.8;
+}
+
+.gradient-1 {
+    position: absolute;
+    background: radial-gradient(circle at center, rgba(18, 113, 255, 0.8) 0, rgba(18, 113, 255, 0) 50%) no-repeat;
+    mix-blend-mode: hard-light;
+    width: 80%;
+    height: 80%;
+    top: 10%;
+    left: 10%;
+    animation: moveVertical 30s ease infinite;
+    transform-origin: center center;
+}
+
+.gradient-2 {
+    position: absolute;
+    background: radial-gradient(circle at center, rgba(221, 74, 255, 0.8) 0, rgba(221, 74, 255, 0) 50%) no-repeat;
+    mix-blend-mode: hard-light;
+    width: 80%;
+    height: 80%;
+    top: 10%;
+    left: 10%;
+    animation: moveInCircle 20s reverse infinite;
+    transform-origin: calc(50% - 400px) center;
+}
+
+.gradient-3 {
+    position: absolute;
+    background: radial-gradient(circle at center, rgba(100, 220, 255, 0.8) 0, rgba(100, 220, 255, 0) 50%) no-repeat;
+    mix-blend-mode: hard-light;
+    width: 80%;
+    height: 80%;
+    top: 10%;
+    left: 10%;
+    animation: moveInCircle 40s linear infinite;
+    transform-origin: calc(50% + 400px) center;
+}
+
+.gradient-4 {
+    position: absolute;
+    background: radial-gradient(circle at center, rgba(200, 50, 50, 0.8) 0, rgba(200, 50, 50, 0) 50%) no-repeat;
+    mix-blend-mode: hard-light;
+    width: 80%;
+    height: 80%;
+    top: 10%;
+    left: 10%;
+    animation: moveHorizontal 40s ease infinite;
+    transform-origin: calc(50% - 200px) center;
+    opacity: 0.7;
+}
+
+.gradient-5 {
+    position: absolute;
+    background: radial-gradient(circle at center, rgba(180, 180, 50, 0.8) 0, rgba(180, 180, 50, 0) 50%) no-repeat;
+    mix-blend-mode: hard-light;
+    width: 80%;
+    height: 80%;
+    top: 10%;
+    left: 10%;
+    animation: moveInCircle 20s ease infinite;
+    transform-origin: calc(50% - 800px) calc(50% + 800px);
+}
+
+.interactive-gradient {
+    position: absolute;
+    background: radial-gradient(circle at center, rgba(140, 100, 255, 0.8) 0, rgba(140, 100, 255, 0) 50%) no-repeat;
+    mix-blend-mode: hard-light;
+    width: 100%;
+    height: 100%;
+    top: -50%;
+    left: -50%;
+    opacity: 0.7;
+    pointer-events: none;
+}
+
+@keyframes moveVertical {
+    0% { transform: translateY(-50%); }
+    50% { transform: translateY(50%); }
+    100% { transform: translateY(-50%); }
+}
+
+@keyframes moveInCircle {
+    0% { transform: rotate(0deg); }
+    50% { transform: rotate(180deg); }
+    100% { transform: rotate(360deg); }
+}
+
+@keyframes moveHorizontal {
+    0% { transform: translateX(-50%) translateY(-10%); }
+    50% { transform: translateX(50%) translateY(10%); }
+    100% { transform: translateX(-50%) translateY(-10%); }
+}
+
+/*

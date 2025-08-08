@@ -62,7 +62,7 @@ unsigned long lastWebDataTime = 0;       // 新增：上次發送網頁數據時
 int analysisCount = 0;                   // 新增：分析次數計數器
 
 // 網頁數據發送間隔 (毫秒)
-const unsigned long WEB_DATA_INTERVAL = 50;  // 20Hz，適合3D動畫顯示
+const unsigned long WEB_DATA_INTERVAL = 100;  // 10Hz，優化3D模型性能
 
 // 數據相關
 float sensorBuffer[50][9];  // 緩衝50個時間點的9維數據
@@ -456,50 +456,37 @@ void performSingleAnalysis() {
     }
 }
 
-// 輸出詳細的AI分析結果和康復建議
+// 輸出簡化的AI分析結果，便於網頁解析
 void outputDetailedAnalysisResults() {
     Serial.println();
-    Serial.println("🔍===============================🔍");
-    Serial.println("🧠       深度AI分析報告       🧠");
-    Serial.println("🔍===============================🔍");
-    
-    // 基本分析信息
-    Serial.print("📊 分析編號: #");
+    Serial.println("=== AI分析結果 ===");
+    Serial.print("分析次數: ");
     Serial.println(analysisCount);
-    Serial.print("🎯 帕金森等級: ");
+    Serial.print("帕金森等級: ");
     Serial.print(currentParkinsonsLevel);
     Serial.print(" (");
     Serial.print(aiModel.getParkinsonLevelDescription());
     Serial.println(")");
-    Serial.print("📈 置信度: ");
+    Serial.print("置信度: ");
     Serial.print(currentConfidence * 100, 1);
     Serial.println("%");
     
-    // 詳細症狀分析
-    Serial.println("\n🔬 症狀詳細分析:");
-    outputSymptomAnalysis();
-    
-    // 個性化康復建議
-    Serial.println("\n💪 個性化康復計劃:");
-    outputRehabilitationPlan();
-    
-    // 設備調整建議
-    Serial.println("\n⚙️  設備調整建議:");
     int recommendedResistance = map(currentParkinsonsLevel, 1, 5, 30, 150);
-    Serial.print("🔧 建議阻力設定: ");
+    Serial.print("建議阻力設定: ");
     Serial.print(recommendedResistance);
     Serial.println("度");
     
-    // 生活方式建議
-    Serial.println("\n🌟 生活方式建議:");
-    outputLifestyleSuggestions();
+    // 簡化建議
+    Serial.print("訓練建議: ");
+    switch(currentParkinsonsLevel) {
+        case 1: Serial.println("保持現有訓練強度"); break;
+        case 2: Serial.println("增加手指靈活性訓練"); break;
+        case 3: Serial.println("進行阻力訓練"); break;
+        case 4: Serial.println("需要專業指導"); break;
+        case 5: Serial.println("立即就醫"); break;
+    }
     
-    // 下次檢測建議
-    Serial.println("\n📅 下次檢測建議:");
-    outputNextCheckupSuggestions();
-    
-    Serial.println("🔍===============================🔍");
-    Serial.println();
+    Serial.println("==================");
 }
 
 // 症狀詳細分析
