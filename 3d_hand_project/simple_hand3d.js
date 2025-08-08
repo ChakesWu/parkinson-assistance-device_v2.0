@@ -12,6 +12,10 @@ class SimpleHand3D {
         // 手指数据
         this.fingerData = [0, 0, 0, 0, 0];
         this.imuData = { x: 0, y: 0, z: 0 };
+
+        // 水平旋轉（yaw）狀態：弧度與時間戳，用於以 gyro.z 積分
+        this.yaw = 0;            // 弧度
+        this.lastYawTs = null;   // performance.now() 毫秒
         
         this.init();
     }
@@ -327,12 +331,17 @@ class SimpleHand3D {
         const rotationX = Math.atan2(y, Math.sqrt(x * x + z * z)) * 0.5;
         const rotationZ = Math.atan2(x, Math.sqrt(y * y + z * z)) * 0.5;
         
-        // 平滑旋转更新
+        // 平滑旋转更新（俯仰/側傾 由加速度計）
         this.handGroup.rotation.x = THREE.MathUtils.lerp(
             this.handGroup.rotation.x, rotationX, 0.1
         );
         this.handGroup.rotation.z = THREE.MathUtils.lerp(
             this.handGroup.rotation.z, rotationZ, 0.1
+        );
+
+        // 水平旋轉（yaw）由陀螺儀積分結果控制
+        this.handGroup.rotation.y = THREE.MathUtils.lerp(
+            this.handGroup.rotation.y, this.yaw, 0.1
         );
         
         this.imuData = imuData;
@@ -349,13 +358,30 @@ class SimpleHand3D {
                 });
             }
             
-            // 更新手部旋转
+            // 以陀螺儀 z 軸角速度（deg/s）積分更新 yaw（弧度），達成「跟手同步」水平旋轉
+            if (sensorData.gyroscope && isFinite(sensorData.gyroscope.z)) {
+                const now = performance.now();
+                const dt = this.lastYawTs ? (now - this.lastYawTs) / 1000 : 0;
+                this.lastYawTs = now;
+                if (dt > 0) {
+                    const yawDelta = sensorData.gyroscope.z * Math.PI / 180 * dt; // deg/s -> rad/s * s
+                    this.yaw += yawDelta;
+                }
+            }
+
+            // 更新手部旋转（俯仰/側傾 由加速度計; 水平由 this.yaw）
             if (sensorData.accelerometer) {
                 this.updateHandRotation(sensorData.accelerometer);
             }
         } catch (error) {
             console.error('简化3D模型更新错误:', error);
         }
+    }
+
+    // 將當前方向設定為 0，抑制漂移
+    resetYaw() {
+        this.yaw = 0;
+        this.lastYawTs = null;
     }
     
     addEventListeners() {
@@ -397,6 +423,14 @@ class SimpleHand3D {
             const delta = event.deltaY * 0.001;
             this.camera.position.z = Math.max(3, Math.min(15, this.camera.position.z + delta));
         });
+
+        // 鍵盤快捷鍵：R 重置水平角（yaw）
+        this._onKeyDown = (e) => {
+            if (e.key === 'r' || e.key === 'R') {
+                this.resetYaw();
+            }
+        };
+        window.addEventListener('keydown', this._onKeyDown);
     }
     
     onWindowResize() {
@@ -463,6 +497,11 @@ class SimpleHand3D {
                 }
             });
         }
+
+        // 解除鍵盤監聽
+        if (this._onKeyDown) {
+            window.removeEventListener('keydown', this._onKeyDown);
+        }
     }
     
     // 测试动画
@@ -507,6 +546,8 @@ function initSimpleHand3D() {
         
         // 更新全局变量
         window.simpleHand3D = simpleHand3D;
+        // 提供全域重置方法
+        window.resetYaw = () => simpleHand3D && simpleHand3D.resetYaw();
         
         console.log('✅ 简化3D机械手初始化成功');
         return true;

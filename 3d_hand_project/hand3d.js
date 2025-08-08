@@ -679,6 +679,12 @@ class Hand3D {
         this.handModel.rotation.z = THREE.MathUtils.lerp(
             this.handModel.rotation.z, rotationZ, 0.1
         );
+        // 水平旋轉（yaw）跟手同步
+        if (typeof this.yaw === 'number') {
+            this.handModel.rotation.y = THREE.MathUtils.lerp(
+                this.handModel.rotation.y, this.yaw, 0.1
+            );
+        }
         
         this.imuData = imuData;
     }
@@ -691,6 +697,18 @@ class Hand3D {
             });
         }
         
+        // 以陀螺儀 z 軸角速度（deg/s）積分更新 yaw（弧度）
+        if (sensorData.gyroscope && isFinite(sensorData.gyroscope.z)) {
+            if (!this._lastYawTs) this._lastYawTs = performance.now();
+            const now = performance.now();
+            const dt = (now - this._lastYawTs) / 1000;
+            this._lastYawTs = now;
+            if (!this.yaw) this.yaw = 0;
+            if (dt > 0) {
+                this.yaw += sensorData.gyroscope.z * Math.PI / 180 * dt;
+            }
+        }
+
         // 更新手部旋轉
         if (sensorData.accelerometer) {
             this.updateHandRotation({
@@ -699,6 +717,11 @@ class Hand3D {
                 magnetometer: sensorData.magnetometer || { x: 0, y: 0, z: 0 }
             });
         }
+    }
+    
+    resetYaw() {
+        this.yaw = 0;
+        this._lastYawTs = null;
     }
     
     addEventListeners() {

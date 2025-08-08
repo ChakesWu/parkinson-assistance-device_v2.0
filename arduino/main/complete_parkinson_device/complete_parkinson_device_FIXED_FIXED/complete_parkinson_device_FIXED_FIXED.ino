@@ -771,8 +771,7 @@ void sendRawDataToWeb(float* rawData) {
     Serial.print(",");
     Serial.print(rawData[14], 3);
     
-    Serial.println("TensorFlowLiteInference initialized");
-        //n();
+    Serial.println();
 }
 
 void blinkError() {

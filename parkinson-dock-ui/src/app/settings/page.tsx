@@ -1,13 +1,39 @@
 'use client';
 
 import React, { useState } from 'react';
-import { DockDemo } from '@/components/ui/dock-demo';
+import { AnimatedDock } from '@/components/ui/animated-dock';
+import { Home, Activity, Book, Settings, Brain } from 'lucide-react';
+
 
 export default function SettingsPage() {
   const [darkMode, setDarkMode] = useState(true);
   const [notifications, setNotifications] = useState(true);
   const [vibration, setVibration] = useState(false);
   const [dataSharing, setDataSharing] = useState(true);
+
+  // 動態按鈕配置
+  const dockItems = [
+    {
+      link: "/",
+      Icon: <Home size={22} />,
+    },
+    {
+      link: "/device",
+      Icon: <Activity size={22} />,
+    },
+    {
+      link: "/records",
+      Icon: <Book size={22} />,
+    },
+    {
+      link: "/ai-analysis",
+      Icon: <Brain size={22} />,
+    },
+    {
+      link: "/settings",
+      Icon: <Settings size={22} />,
+    }
+  ];
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-neutral-900">
@@ -92,8 +118,11 @@ export default function SettingsPage() {
           </div>
         </div>
       </main>
-      
-      <DockDemo />
+
+      {/* 添加懸浮動態按鈕 */}
+      <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50">
+        <AnimatedDock items={dockItems} />
+      </div>
     </div>
   );
 }

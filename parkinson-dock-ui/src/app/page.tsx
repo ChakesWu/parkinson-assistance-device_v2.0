@@ -1,6 +1,8 @@
 import { FooterDemo } from "@/components/ui/footer-demo";
 import HeroSection from "@/components/ui/hero-section";
 import { AnimatedDock } from "@/components/ui/animated-dock";
+import AnimatedCardDemo from "@/components/ui/animated-card-demo";
+import ParkinsonTestimonials from "@/components/ui/parkinson-testimonials";
 import { Home, Activity, Book, Settings, Brain } from 'lucide-react';
 
 export default function HomePage() {
@@ -39,10 +41,7 @@ export default function HomePage() {
           description="利用我们全面的开发工具和资源，帮助您更好地管理和治疗帕金森病。"
           ctaText="开始使用"
           ctaHref="/device"
-          bottomImage={{
-            light: "/parkinson-dashboard-light.png",
-            dark: "/parkinson-dashboard-dark.png",
-          }}
+          bottomComponent={<AnimatedCardDemo />}
           gridOptions={{
             angle: 65,
             opacity: 0.4,
@@ -57,7 +56,10 @@ export default function HomePage() {
           <AnimatedDock items={dockItems} />
         </div>
       </div>
-      
+
+      {/* 患者見證欄位 */}
+      <ParkinsonTestimonials />
+
       {/* Footer */}
       <FooterDemo />
     </div>

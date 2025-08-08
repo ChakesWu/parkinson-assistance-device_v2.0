@@ -40,14 +40,14 @@ export function FooterDemo() {
             label: "LinkedIn",
           },
         ]}
-        mainLinks={[
-          { href: "#", label: "首页" },
-          { href: "#", label: "设备连接" },
-          { href: "#", label: "记录分析" },
-          { href: "#", label: "AI分析" },
-          { href: "#", label: "3D手部模型" },
-          { href: "#", label: "设置" },
-        ]}
+//        mainLinks={[
+//          { href: "#", label: "首页" },
+//          { href: "#", label: "设备连接" },
+//          { href: "#", label: "记录分析" },
+//          { href: "#", label: "AI分析" },
+//          { href: "#", label: "3D手部模型" },
+//          { href: "#", label: "设置" },
+//        ]}
         legalLinks={[
           { href: "#", label: "隐私政策" },
           { href: "#", label: "服务条款" },

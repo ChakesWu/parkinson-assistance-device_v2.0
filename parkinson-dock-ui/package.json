@@ -13,11 +13,14 @@
     "@tensorflow/tfjs": "^4.22.0",
     "@types/three": "^0.179.0",
     "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "framer-motion": "^12.23.12",
     "lucide-react": "^0.536.0",
+    "motion": "^12.23.12",
     "next": "15.4.5",
     "react": "19.1.0",
     "react-dom": "19.1.0",
+    "tailwind-merge": "^3.3.1",
     "three": "^0.179.1"
   },
   "devDependencies": {

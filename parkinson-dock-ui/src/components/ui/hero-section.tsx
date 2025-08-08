@@ -17,6 +17,7 @@ interface HeroSectionProps extends React.HTMLAttributes<HTMLDivElement> {
     light: string;
     dark: string;
   };
+  bottomComponent?: React.ReactNode;
   gridOptions?: {
     angle?: number;
     cellSize?: number;
@@ -94,6 +95,7 @@ const HeroSection = React.forwardRef<HTMLDivElement, HeroSectionProps>(
         light: "https://farmui.vercel.app/dashboard-light.png",
         dark: "https://farmui.vercel.app/dashboard.png",
       },
+      bottomComponent,
       gridOptions,
       ...props
     },
@@ -133,7 +135,11 @@ const HeroSection = React.forwardRef<HTMLDivElement, HeroSectionProps>(
                 </span>
               </div>
             </div>
-            {bottomImage && (
+            {bottomComponent ? (
+              <div className="mt-32 mx-10 relative z-10">
+                {bottomComponent}
+              </div>
+            ) : bottomImage ? (
               <div className="mt-32 mx-10 relative z-10">
                 <img
                   src={bottomImage.light}
@@ -146,7 +152,7 @@ const HeroSection = React.forwardRef<HTMLDivElement, HeroSectionProps>(
                   alt="Dashboard preview"
                 />
               </div>
-            )}
+            ) : null}
           </div>
         </section>
         <style jsx global>{`

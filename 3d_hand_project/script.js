@@ -67,11 +67,17 @@ const calibrateBtn = document.getElementById('calibrateBtn');
 const startAIBtn = document.getElementById('startAIBtn');
 const stopAIBtn = document.getElementById('stopAIBtn');
 const statusBtn = document.getElementById('statusBtn');
+const resetYawBtn = document.getElementById('resetYawBtn');
 
 calibrateBtn.addEventListener('click', () => sendCommandToArduino('CALIBRATE'));
 startAIBtn.addEventListener('click', () => sendCommandToArduino('AUTO'));
 stopAIBtn.addEventListener('click', () => sendCommandToArduino('STOP'));
 statusBtn.addEventListener('click', () => sendCommandToArduino('STATUS'));
+if (resetYawBtn) {
+    resetYawBtn.addEventListener('click', () => {
+        try { window.resetYaw && window.resetYaw(); } catch (e) { console.warn('resetYaw failed', e); }
+    });
+}
 
 // 連接到串口設備
 async function connectToDevice() {

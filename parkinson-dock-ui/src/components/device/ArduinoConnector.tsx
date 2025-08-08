@@ -1,7 +1,7 @@
 'use client';
 
 /// &lt;reference path="../../types/web-serial.d.ts" />
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 interface SensorData {
   fingers: number[];
@@ -10,7 +10,11 @@ interface SensorData {
   mag: { x: number; y: number; z: number };
 }
 
-export default function ArduinoConnector() {
+export interface ArduinoConnectorProps {
+  onDataReceived?: (data: Partial<SensorData> & { emg?: number }) => void;
+}
+
+export default function ArduinoConnector({ onDataReceived }: ArduinoConnectorProps) {
   const [isConnected, setIsConnected] = useState(false);
   const [sensorData, setSensorData] = useState<SensorData>({
     fingers: [0, 0, 0, 0, 0],
@@ -20,11 +24,25 @@ export default function ArduinoConnector() {
   });
   const [port, setPort] = useState<SerialPort | null>(null);
   const [reader, setReader] = useState<ReadableStreamDefaultReader | null>(null);
+  const [writer, setWriter] = useState<WritableStreamDefaultWriter | null>(null);
+  const writableClosedRef = useRef<Promise<void> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const readBufferRef = useRef<string>('');
 
   // 檢查瀏覽器是否支持Web Serial API
   const isWebSerialSupported = () => {
     return 'serial' in navigator;
+  };
+
+  const sendCommand = async (command: string) => {
+    try {
+      if (!writer) return;
+      const payload = command.endsWith('\n') ? command : `${command}\n`;
+      await writer.write(payload);
+    } catch (e) {
+      console.error('串口寫入失敗:', e);
+      setError(`串口寫入失敗: ${(e as Error).message}`);
+    }
   };
 
   // 連接Arduino設備
@@ -37,7 +55,8 @@ export default function ArduinoConnector() {
     try {
       // 請求用戶選擇串口設備
       const selectedPort = await navigator.serial.requestPort();
-      await selectedPort.open({ baudRate: 115200 });
+      // 與 Arduino 韌體 (Serial.begin(9600)) 一致
+      await selectedPort.open({ baudRate: 9600 });
       
       setPort(selectedPort);
       setIsConnected(true);
@@ -49,8 +68,20 @@ export default function ArduinoConnector() {
       const newReader = textDecoder.readable.getReader();
       setReader(newReader);
       
+      // 設置寫入器
+      const textEncoder = new TextEncoderStream();
+      writableClosedRef.current = textEncoder.readable.pipeTo(selectedPort.writable);
+      const newWriter = textEncoder.writable.getWriter();
+      setWriter(newWriter);
+
       // 開始讀取數據
       readData(newReader);
+
+      // 自動開始數據採集
+      await new Promise(r => setTimeout(r, 100));
+      await newWriter.write('START\n');
+      // 可選: 查詢狀態
+      await newWriter.write('STATUS\n');
       
     } catch (err) {
       console.error('連接錯誤:', err);
@@ -65,6 +96,20 @@ export default function ArduinoConnector() {
       await reader.cancel();
     }
     
+    if (writer) {
+      try {
+        await writer.close();
+      } catch {}
+      setWriter(null);
+    }
+
+    if (writableClosedRef.current) {
+      try {
+        await writableClosedRef.current;
+      } catch {}
+      writableClosedRef.current = null;
+    }
+
     if (port) {
       await port.close();
     }
@@ -85,7 +130,14 @@ export default function ArduinoConnector() {
         }
         
         if (value) {
-          parseSensorData(value);
+          // 累積到行緩衝，確保跨 chunk 的資料能完整解析
+          readBufferRef.current += value as string;
+          const parts = readBufferRef.current.split('\n');
+          // 最後一段可能是不完整行，暫存回緩衝
+          readBufferRef.current = parts.pop() ?? '';
+          for (const line of parts) {
+            parseSensorData(line);
+          }
         }
       }
     } catch (err) {
@@ -99,58 +151,142 @@ export default function ArduinoConnector() {
   const parseSensorData = (dataString: string) => {
     try {
       const lines = dataString.split('\n');
-      
+
       for (const line of lines) {
         const trimmedLine = line.trim();
         if (!trimmedLine) continue;
-        
-        // 解析手指彎曲數據
-        if (trimmedLine.startsWith('Fingers:')) {
-          const fingersMatch = trimmedLine.match(/Fingers:\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+)/);
-          if (fingersMatch) {
-            setSensorData(prev => ({
-              ...prev,
-              fingers: [
-                parseInt(fingersMatch[1]),
-                parseInt(fingersMatch[2]),
-                parseInt(fingersMatch[3]),
-                parseInt(fingersMatch[4]),
-                parseInt(fingersMatch[5])
-              ]
-            }));
+
+        // 解析 DATA 格式: DATA,finger1,finger2,finger3,finger4,finger5,emg,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,mag_x,mag_y,mag_z
+        if (trimmedLine.startsWith('DATA,')) {
+          const parts = trimmedLine.split(',');
+          if (parts.length >= 16) { // DATA + 15 values (含 accel/gyro/mag)
+            // 解析手指數據 (索引 1-5)
+            const fingers = [
+              parseInt(parts[1]),
+              parseInt(parts[2]),
+              parseInt(parts[3]),
+              parseInt(parts[4]),
+              parseInt(parts[5])
+            ];
+
+            // 解析 IMU 數據 (索引 7-15)
+            const accel = {
+              x: parseFloat(parts[7]),
+              y: parseFloat(parts[8]),
+              z: parseFloat(parts[9])
+            };
+
+            const gyro = {
+              x: parseFloat(parts[10]),
+              y: parseFloat(parts[11]),
+              z: parseFloat(parts[12])
+            };
+
+            const mag = {
+              x: parseFloat(parts[13]),
+              y: parseFloat(parts[14]),
+              z: parseFloat(parts[15])
+            };
+
+            // 更新傳感器數據
+            const newSensorData = {
+              fingers,
+              accel,
+              gyro,
+              mag,
+              emg: parseInt(parts[6]) // EMG 數據在索引 6
+            };
+
+            setSensorData(newSensorData as SensorData);
+            onDataReceived?.(newSensorData);
+
+            console.log('解析到數據:', newSensorData);
+          } else if (parts.length >= 10) { // DATA + 9 values (fingers(5), emg(1), accel(3))
+            // 解析手指數據 (索引 1-5)
+            const rawFingers = [
+              parseInt(parts[1]),
+              parseInt(parts[2]),
+              parseInt(parts[3]),
+              parseInt(parts[4]),
+              parseInt(parts[5])
+            ];
+            // 限幅到 0..1023，避免負值導致 3D 模型反向或 UI 條形圖異常
+            const fingers = rawFingers.map(v => Math.max(0, Math.min(1023, v)));
+
+            const accel = {
+              x: parseFloat(parts[7]),
+              y: parseFloat(parts[8]),
+              z: parseFloat(parts[9])
+            };
+
+            const newSensorData = {
+              fingers,
+              accel,
+              gyro: { x: 0, y: 0, z: 0 },
+              mag: { x: 0, y: 0, z: 0 },
+              emg: parseInt(parts[6])
+            };
+
+            setSensorData(newSensorData as SensorData);
+            onDataReceived?.(newSensorData);
+            console.log('解析到數據(簡化格式):', newSensorData);
           }
         }
-        
+
+        // 保留舊格式的兼容性
+        // 解析手指彎曲數據
+        else if (trimmedLine.startsWith('Fingers:')) {
+          const fingersMatch = trimmedLine.match(/Fingers:\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+)/);
+          if (fingersMatch) {
+            const newFingers = [
+              parseInt(fingersMatch[1]),
+              parseInt(fingersMatch[2]),
+              parseInt(fingersMatch[3]),
+              parseInt(fingersMatch[4]),
+              parseInt(fingersMatch[5])
+            ];
+            setSensorData(prev => ({
+              ...prev,
+              fingers: newFingers
+            }));
+            onDataReceived?.({ fingers: newFingers });
+          }
+        }
+
         // 解析加速度計數據
         else if (trimmedLine.startsWith('Accel:')) {
           const accelMatch = trimmedLine.match(/Accel:\s*([\d.-]+),\s*([\d.-]+),\s*([\d.-]+)/);
           if (accelMatch) {
+            const newAccel = {
+              x: parseFloat(accelMatch[1]),
+              y: parseFloat(accelMatch[2]),
+              z: parseFloat(accelMatch[3])
+            };
             setSensorData(prev => ({
               ...prev,
-              accel: {
-                x: parseFloat(accelMatch[1]),
-                y: parseFloat(accelMatch[2]),
-                z: parseFloat(accelMatch[3])
-              }
+              accel: newAccel
             }));
+            onDataReceived?.({ accel: newAccel });
           }
         }
-        
+
         // 解析陀螺儀數據
         else if (trimmedLine.startsWith('Gyro:')) {
           const gyroMatch = trimmedLine.match(/Gyro:\s*([\d.-]+),\s*([\d.-]+),\s*([\d.-]+)/);
           if (gyroMatch) {
+            const newGyro = {
+              x: parseFloat(gyroMatch[1]),
+              y: parseFloat(gyroMatch[2]),
+              z: parseFloat(gyroMatch[3])
+            };
             setSensorData(prev => ({
               ...prev,
-              gyro: {
-                x: parseFloat(gyroMatch[1]),
-                y: parseFloat(gyroMatch[2]),
-                z: parseFloat(gyroMatch[3])
-              }
+              gyro: newGyro
             }));
+            onDataReceived?.({ gyro: newGyro });
           }
         }
-        
+
         // 解析磁力計數據
         else if (trimmedLine.startsWith('Mag:')) {
           const magMatch = trimmedLine.match(/Mag:\s*([\d.-]+),\s*([\d.-]+),\s*([\d.-]+)/);
@@ -244,6 +380,7 @@ export default function ArduinoConnector() {
         <button 
           className={`bg-purple-500 hover:bg-purple-600 text-white py-2 px-4 rounded-lg transition ${!isConnected ? 'opacity-50 cursor-not-allowed' : ''}`}
           disabled={!isConnected}
+          onClick={() => sendCommand('START')}
         >
           同步數據
         </button>

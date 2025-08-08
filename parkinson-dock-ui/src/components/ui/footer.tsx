@@ -3,16 +3,16 @@ import { Button } from "@/components/ui/button"
 interface FooterProps {
   logo: React.ReactNode
   brandName: string
-  socialLinks: Array<{
+  socialLinks?: Array<{
     icon: React.ReactNode
     href: string
     label: string
   }>
-  mainLinks: Array<{
+  mainLinks?: Array<{
     href: string
     label: string
   }>
-  legalLinks: Array<{
+  legalLinks?: Array<{
     href: string
     label: string
   }>
@@ -25,9 +25,9 @@ interface FooterProps {
 export function Footer({
   logo,
   brandName,
-  socialLinks,
-  mainLinks,
-  legalLinks,
+  socialLinks = [],
+  mainLinks = [],
+  legalLinks = [],
   copyright,
 }: FooterProps) {
   return (

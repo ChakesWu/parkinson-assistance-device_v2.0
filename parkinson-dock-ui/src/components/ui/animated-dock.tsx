@@ -9,7 +9,7 @@ import {
   useSpring,
   useTransform,
 } from "framer-motion";
-import { twMerge } from "tailwind-merge";
+
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
@@ -32,7 +32,7 @@ export const AnimatedDock = ({ className, items }: AnimatedDockProps) => {
       onMouseMove={(e) => mouseX.set(e.pageX)}
       onMouseLeave={() => mouseX.set(Infinity)}
       className={cn(
-        "mx-auto flex h-16 items-end gap-4 rounded-2xl bg-secondary/50 border border-primary/10 shadow-md px-4 pb-3",
+        "mx-auto flex h-16 items-end gap-4 rounded-2xl bg-white/90 dark:bg-gray-900/90 border border-gray-200 dark:border-gray-700 shadow-lg backdrop-blur-sm px-4 pb-3",
         className,
       )}
     >
@@ -41,7 +41,7 @@ export const AnimatedDock = ({ className, items }: AnimatedDockProps) => {
           <Link
             href={item.link}
             target={item.target}
-            className="grow flex items-center justify-center w-full h-full text-primary-foreground"
+            className="grow flex items-center justify-center w-full h-full text-white dark:text-gray-100"
           >
             {item.Icon}
           </Link>
@@ -82,7 +82,7 @@ export const DockItem = ({ mouseX, children }: DockItemProps) => {
     <motion.div
       ref={ref}
       style={{ width }}
-      className="aspect-square w-10 rounded-full bg-primary text-secondary-foreground flex items-center justify-center"
+      className="aspect-square w-10 rounded-full bg-blue-500 hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700 text-white shadow-md flex items-center justify-center transition-colors duration-200"
     >
       <motion.div
         style={{ scale: iconSpring }}
