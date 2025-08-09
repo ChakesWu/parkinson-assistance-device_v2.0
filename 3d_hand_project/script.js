@@ -3,6 +3,10 @@ let isConnected = false;
 let serialPort = null;
 let dataPollingInterval = null;
 
+// 连接模式管理
+let connectionMode = 'serial'; // 'serial' 或 'bluetooth'
+let currentConnectionType = null; // 当前连接类型
+
 // 感測器數據儲存
 let sensorData = {
     fingers: [0, 0, 0, 0, 0],
@@ -27,6 +31,11 @@ const connectBtn = document.getElementById('connectBtn');
 const disconnectBtn = document.getElementById('disconnectBtn');
 const statusIndicator = document.getElementById('statusIndicator');
 const connectionStatus = document.getElementById('connectionStatus');
+const connectionType = document.getElementById('connectionType');
+
+// 连接模式按钮
+const serialModeBtn = document.getElementById('serialModeBtn');
+const bluetoothModeBtn = document.getElementById('bluetoothModeBtn');
 
 // 手指數值顯示元素
 const fingerValueElements = [
@@ -62,6 +71,10 @@ const imuElements = {
 connectBtn.addEventListener('click', connectToDevice);
 disconnectBtn.addEventListener('click', disconnectFromDevice);
 
+// 连接模式切换
+serialModeBtn.addEventListener('click', () => switchConnectionMode('serial'));
+bluetoothModeBtn.addEventListener('click', () => switchConnectionMode('bluetooth'));
+
 // Arduino控制按鈕
 const calibrateBtn = document.getElementById('calibrateBtn');
 const startAIBtn = document.getElementById('startAIBtn');
@@ -79,35 +92,63 @@ if (resetYawBtn) {
     });
 }
 
-// 連接到串口設備
+// 連接到設備 (支持串口和蓝牙)
 async function connectToDevice() {
     try {
-        console.log('正在連接到串口設備...');
+        console.log(`正在連接到${connectionMode === 'serial' ? '串口' : '蓝牙'}設備...`);
         updateConnectionStatus('連接中...', false);
         connectBtn.disabled = true;
 
-        // 使用 Web Serial API 連接
-        serialPort = await navigator.serial.requestPort();
-        await serialPort.open({ baudRate: 115200 });
+        if (connectionMode === 'serial') {
+            await connectViaSerial();
+        } else if (connectionMode === 'bluetooth') {
+            await connectViaBluetooth();
+        }
 
         isConnected = true;
-        updateConnectionStatus("已連接", true);
+        updateConnectionStatus("已連接", true, connectionMode);
         connectBtn.disabled = true;
         disconnectBtn.disabled = false;
-        
+
         // 啟用Arduino控制按鈕
         enableArduinoControls(true);
-        
-        // 開始讀取數據
-        startDataReading();
-        
-        console.log("成功連接到串口設備");
+
+        console.log(`成功連接到${connectionMode === 'serial' ? '串口' : '蓝牙'}設備`);
     } catch (error) {
         console.error("連接失敗:", error);
         updateConnectionStatus("連接失敗", false);
         connectBtn.disabled = false;
         alert(`連接失敗: ${error.message}`);
     }
+}
+
+// 串口连接
+async function connectViaSerial() {
+    // 使用 Web Serial API 連接
+    serialPort = await navigator.serial.requestPort();
+    await serialPort.open({ baudRate: 115200 });
+    currentConnectionType = 'serial';
+
+    // 開始讀取數據
+    startDataReading();
+}
+
+// 蓝牙连接
+async function connectViaBluetooth() {
+    if (!window.bluetoothManager.isBluetoothSupported()) {
+        throw new Error('您的瀏覽器不支援 Web Bluetooth API');
+    }
+
+    // 设置蓝牙管理器回调
+    window.bluetoothManager.onDataReceived = handleBluetoothData;
+    window.bluetoothManager.onConnectionStatusChanged = (connected, type) => {
+        if (!connected) {
+            onDeviceDisconnected();
+        }
+    };
+
+    await window.bluetoothManager.connect();
+    currentConnectionType = 'bluetooth';
 }
 
 // 開始讀取數據
@@ -137,45 +178,58 @@ async function startDataReading() {
     }
 }
 
-// 發送指令到Arduino
+// 發送指令到Arduino (支持串口和蓝牙)
 async function sendCommandToArduino(command) {
-    if (!serialPort || !isConnected) {
+    if (!isConnected) {
         alert('請先連接Arduino設備');
         return;
     }
-    
-    const writer = serialPort.writable.getWriter();
-    const encoder = new TextEncoder();
-    
+
     try {
-        await writer.write(encoder.encode(command + '\n'));
-        console.log('已發送指令:', command);
+        if (currentConnectionType === 'serial' && serialPort) {
+            const writer = serialPort.writable.getWriter();
+            const encoder = new TextEncoder();
+
+            try {
+                await writer.write(encoder.encode(command + '\n'));
+                console.log('已通过串口發送指令:', command);
+            } finally {
+                writer.releaseLock();
+            }
+        } else if (currentConnectionType === 'bluetooth' && window.bluetoothManager) {
+            await window.bluetoothManager.sendCommand(command);
+            console.log('已通过蓝牙發送指令:', command);
+        } else {
+            throw new Error('无效的连接类型');
+        }
     } catch (error) {
         console.error('發送指令失敗:', error);
-    } finally {
-        writer.releaseLock();
+        alert(`發送指令失敗: ${error.message}`);
     }
 }
 
 // 斷開設備連接
 async function disconnectFromDevice() {
     try {
-        if (serialPort) {
+        if (currentConnectionType === 'serial' && serialPort) {
             await serialPort.close();
+            serialPort = null;
+        } else if (currentConnectionType === 'bluetooth' && window.bluetoothManager) {
+            await window.bluetoothManager.disconnect();
         }
-        
+
         isConnected = false;
-        serialPort = null;
+        currentConnectionType = null;
         updateConnectionStatus('未連接', false);
         connectBtn.disabled = false;
         disconnectBtn.disabled = true;
-        
+
         // 禁用Arduino控制按鈕
         enableArduinoControls(false);
-        
+
         // 重置顯示
         resetDisplays();
-        
+
         console.log('串口連接已斷開');
     } catch (error) {
         console.error('斷開連接失敗:', error);
@@ -208,12 +262,27 @@ function enableArduinoControls(enabled) {
 }
 
 // 更新連接狀態顯示
-function updateConnectionStatus(status, connected) {
+function updateConnectionStatus(status, connected, type = null) {
     connectionStatus.textContent = status;
+
     if (connected) {
         statusIndicator.classList.add('connected');
+        statusIndicator.classList.remove('disconnected');
+
+        // 显示连接类型
+        if (type && connectionType) {
+            connectionType.textContent = type === 'serial' ? '串口' : '蓝牙';
+            connectionType.className = `connection-type ${type}`;
+        }
     } else {
+        statusIndicator.classList.add('disconnected');
         statusIndicator.classList.remove('connected');
+
+        // 清除连接类型显示
+        if (connectionType) {
+            connectionType.textContent = '';
+            connectionType.className = 'connection-type';
+        }
     }
 }
 
@@ -616,15 +685,15 @@ window.getAllSensorData = function() {
 // 頁面載入完成後初始化
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Arduino 手指彎曲感測器網頁已載入');
-    
+
     // 初始化顯示
     resetDisplays();
-    
-    // 檢查瀏覽器是否支援 Web Serial API
-    if (!navigator.serial) {
-        alert('您的瀏覽器不支援 Web Serial API，請使用 Chrome 或 Edge 瀏覽器');
-        connectBtn.disabled = true;
-    }
+
+    // 检查浏览器支持情况
+    checkBrowserSupport();
+
+    // 初始化连接模式
+    switchConnectionMode('serial');
     
     // 延遲初始化3D模型，確保所有資源載入完成
     setTimeout(() => {
@@ -897,4 +966,118 @@ window.getAllSensorData = function() {
         aiAnalysis: aiAnalysisData
     };
 };
+
+// ========== 蓝牙和模式管理函数 ==========
+
+// 切换连接模式
+function switchConnectionMode(mode) {
+    if (isConnected) {
+        alert('请先断开当前连接再切换模式');
+        return;
+    }
+
+    connectionMode = mode;
+
+    // 更新按钮状态
+    serialModeBtn.classList.toggle('active', mode === 'serial');
+    bluetoothModeBtn.classList.toggle('active', mode === 'bluetooth');
+
+    // 更新连接按钮文本
+    connectBtn.textContent = mode === 'serial' ? '連接 Arduino (串口)' : '連接 Arduino (蓝牙)';
+
+    console.log(`切换到${mode === 'serial' ? '串口' : '蓝牙'}连接模式`);
+}
+
+// 处理蓝牙数据
+function handleBluetoothData(data) {
+    if (!data) return;
+
+    // 更新传感器数据
+    if (data.fingers) {
+        sensorData.fingers = data.fingers;
+    }
+    if (data.accelerometer) {
+        sensorData.accelerometer = data.accelerometer;
+    }
+    if (data.gyroscope) {
+        sensorData.gyroscope = data.gyroscope;
+    }
+    if (data.magnetometer) {
+        sensorData.magnetometer = data.magnetometer;
+    }
+
+    // 更新显示
+    updateAllDisplays();
+
+    // 定期显示数据状态
+    if (Math.random() < 0.01) { // 1%的概率显示
+        console.log('✅ 蓝牙数据正常更新:', {
+            fingers: sensorData.fingers.map(v => Math.round(v)),
+            accel: sensorData.accelerometer,
+            gyro: sensorData.gyroscope,
+            mag: sensorData.magnetometer
+        });
+    }
+}
+
+// 从蓝牙更新AI显示
+window.updateAIDisplayFromBLE = function(aiData) {
+    if (aiData.parkinsonLevel !== undefined) {
+        aiAnalysisData.parkinsonLevel = aiData.parkinsonLevel;
+    }
+    if (aiData.confidence !== undefined) {
+        aiAnalysisData.confidence = aiData.confidence;
+    }
+    if (aiData.analysisCount !== undefined) {
+        aiAnalysisData.analysisCount = aiData.analysisCount;
+    }
+
+    aiAnalysisData.lastUpdateTime = new Date().toLocaleString();
+    updateAIDisplay();
+    console.log('蓝牙AI分析结果已更新:', aiData);
+};
+
+// 检查浏览器支持情况
+function checkBrowserSupport() {
+    const serialSupported = !!navigator.serial;
+    const bluetoothSupported = !!navigator.bluetooth;
+
+    console.log('浏览器支持情况:', {
+        serial: serialSupported,
+        bluetooth: bluetoothSupported
+    });
+
+    // 如果都不支持，禁用连接
+    if (!serialSupported && !bluetoothSupported) {
+        alert('您的瀏覽器不支援 Web Serial API 和 Web Bluetooth API，請使用 Chrome 或 Edge 瀏覽器');
+        connectBtn.disabled = true;
+        serialModeBtn.disabled = true;
+        bluetoothModeBtn.disabled = true;
+        return;
+    }
+
+    // 根据支持情况启用/禁用模式按钮
+    if (!serialSupported) {
+        serialModeBtn.disabled = true;
+        serialModeBtn.title = '浏览器不支持 Web Serial API';
+        // 自动切换到蓝牙模式
+        if (bluetoothSupported) {
+            switchConnectionMode('bluetooth');
+        }
+    }
+
+    if (!bluetoothSupported) {
+        bluetoothModeBtn.disabled = true;
+        bluetoothModeBtn.title = '浏览器不支持 Web Bluetooth API';
+    }
+
+    // 显示支持状态提示
+    if (!serialSupported || !bluetoothSupported) {
+        const unsupportedFeatures = [];
+        if (!serialSupported) unsupportedFeatures.push('串口连接');
+        if (!bluetoothSupported) unsupportedFeatures.push('蓝牙连接');
+
+        console.warn(`浏览器不支持: ${unsupportedFeatures.join(', ')}`);
+    }
+}
 

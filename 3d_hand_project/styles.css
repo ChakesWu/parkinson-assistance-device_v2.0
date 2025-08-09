@@ -139,6 +139,69 @@ main {
     cursor: not-allowed;
 }
 
+/* 连接方式选择器 */
+.connection-mode-selector {
+    margin: 15px 0;
+}
+
+.connection-mode-selector h3 {
+    margin: 0 0 10px 0;
+    font-size: 1rem;
+    color: #2c3e50;
+}
+
+.mode-buttons {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+
+.mode-btn {
+    padding: 8px 16px;
+    border: 2px solid #3498db;
+    border-radius: 6px;
+    background: white;
+    color: #3498db;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.mode-btn:hover {
+    background: #ecf0f1;
+}
+
+.mode-btn.active {
+    background: #3498db;
+    color: white;
+}
+
+.mode-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* 连接类型显示 */
+.connection-type {
+    margin-left: 10px;
+    padding: 4px 8px;
+    background: #ecf0f1;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    color: #7f8c8d;
+}
+
+.connection-type.serial {
+    background: #e8f5e8;
+    color: #27ae60;
+}
+
+.connection-type.bluetooth {
+    background: #e3f2fd;
+    color: #2196f3;
+}
+
 /* 手指彎曲視覺化區域 */
 .hand-visualization {
     background: white;

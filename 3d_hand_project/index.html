@@ -14,7 +14,7 @@
     <div class="container">
         <header>
             <h1>Arduino 手指彎曲感測器</h1>
-            <p>透過串口連接 Arduino Nano 33 BLE Sense Rev2，即時顯示手指彎曲和感測器數據</p>
+            <p>透過串口或蓝牙連接 Arduino Nano 33 BLE Sense Rev2，即時顯示手指彎曲和感測器數據</p>
         </header>
 
         <main>
@@ -23,6 +23,16 @@
                 <div class="connection-status">
                     <div class="status-indicator" id="statusIndicator"></div>
                     <span id="connectionStatus">未連接</span>
+                    <span id="connectionType" class="connection-type"></span>
+                </div>
+
+                <!-- 连接方式选择 -->
+                <div class="connection-mode-selector">
+                    <h3>連接方式</h3>
+                    <div class="mode-buttons">
+                        <button id="serialModeBtn" class="mode-btn active">串口連接</button>
+                        <button id="bluetoothModeBtn" class="mode-btn">蓝牙連接</button>
+                    </div>
                 </div>
 
                 <div class="control-buttons">
@@ -252,6 +262,7 @@
         </main>
     </div>
 
+    <script src="bluetooth.js"></script>
     <script src="script.js"></script>
     <script src="simple_hand3d.js"></script>
     <script src="background-animation.js"></script>

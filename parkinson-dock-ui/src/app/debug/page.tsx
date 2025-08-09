@@ -43,14 +43,16 @@ export default function DebugPage() {
   useEffect(() => {
     const interval = setInterval(() => {
       // 这里可以从全局状态或localStorage获取实时数据
-      const storedData = localStorage.getItem('sensorData');
-      if (storedData) {
-        try {
-          const data = JSON.parse(storedData);
-          setSensorData(data);
-          setConnectionStatus('已連接');
-        } catch (error) {
-          console.error('Error parsing sensor data:', error);
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const storedData = localStorage.getItem('sensorData');
+        if (storedData) {
+          try {
+            const data = JSON.parse(storedData);
+            setSensorData(data);
+            setConnectionStatus('已連接');
+          } catch (error) {
+            console.error('Error parsing sensor data:', error);
+          }
         }
       }
     }, 100);

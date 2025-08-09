@@ -13,6 +13,7 @@
 #include <Arduino.h>
 #include "Arduino_BMI270_BMM150.h"
 #include <Servo.h>
+#include <ArduinoBLE.h>
 
 // Pin Definitions
 #define PIN_PINKY     A0
@@ -37,6 +38,13 @@ const unsigned long SAMPLE_RATE = 100;        // Sampling interval (ms)
 const unsigned long BASELINE_DURATION = 2000;  // Calibration duration (ms)
 const unsigned long INFERENCE_INTERVAL = 5000; // Inference interval (ms)
 const unsigned long WEB_DATA_INTERVAL = 100;   // Web data sending interval (ms)
+
+// BLE Configuration
+#define BLE_DEVICE_NAME "ParkinsonDevice_v2"
+#define BLE_SERVICE_UUID "12345678-1234-1234-1234-123456789abc"
+#define BLE_SENSOR_DATA_UUID "12345678-1234-1234-1234-123456789abd"
+#define BLE_COMMAND_UUID "12345678-1234-1234-1234-123456789abe"
+#define BLE_AI_RESULT_UUID "12345678-1234-1234-1234-123456789abf"
 
 // System State
 enum SystemState {
@@ -74,6 +82,22 @@ bool isTraining = false;
 // Global Objects
 Servo rehabServo;
 
+// BLE Objects - 使用更兼容的初始化方式
+BLEService parkinsonService(BLE_SERVICE_UUID);
+BLEStringCharacteristic sensorDataCharacteristic(BLE_SENSOR_DATA_UUID, BLERead | BLENotify, 120); // 120 bytes for sensor data
+BLEStringCharacteristic commandCharacteristic(BLE_COMMAND_UUID, BLEWrite, 20); // 20 bytes for commands
+BLEStringCharacteristic aiResultCharacteristic(BLE_AI_RESULT_UUID, BLERead | BLENotify, 100); // 100 bytes for AI results
+
+// Communication Mode
+enum CommunicationMode {
+  COMM_SERIAL_ONLY,
+  COMM_BLE_ONLY,
+  COMM_BOTH
+};
+
+CommunicationMode commMode = COMM_BOTH;
+bool bleConnected = false;
+
 // Simplified AI Model Simulation Class
 class TensorFlowLiteInference {
 private:
@@ -82,8 +106,7 @@ private:
     
 public:
     void begin() {
-        Serial.println("TensorFlowLiteInference initialized");
-        //n("AI Model Initialized");
+        Serial.println("AI Model Initialized");
     }
     
     void addDataPoint(float* data) {
@@ -160,35 +183,54 @@ void sendContinuousWebData();
 void readRawSensorDataForWeb(float* data);
 void sendRawDataToWeb(float* rawData);
 
+// BLE Function Declarations
+void initializeBLE();
+void handleBLEEvents();
+void sendDataViaBLE(float* rawData);
+void sendAIResultViaBLE();
+void handleBLECommand(String command);
+void sendMessage(String message);
+void onBLEConnected(BLEDevice central);
+void onBLEDisconnected(BLEDevice central);
+void onCommandReceived(BLEDevice central, BLECharacteristic characteristic);
+
 void setup() {
     Serial.begin(115200);
     while (!Serial);
-    
+
     if (!IMU.begin()) {
-        Serial.println("TensorFlowLiteInference initialized");
-        //n("Failed to initialize IMU!");
+        Serial.println("Failed to initialize IMU!");
         while (1);
     }
-    
+
     pinMode(PIN_BUTTON, INPUT_PULLUP);
     pinMode(PIN_LED_STATUS, OUTPUT);
     pinMode(PIN_POT_DETECT, INPUT_PULLUP);
     pinMode(PIN_EMG_DETECT, INPUT_PULLUP);
-    
+
     rehabServo.attach(PIN_SERVO);
     rehabServo.write(90);
+
+    // Initialize BLE
+    initializeBLE();
+
+    Serial.println("Parkinson Assistance Device v2.0 with BLE Ready");
+    Serial.println("Communication modes: Serial + Bluetooth LE");
 }
 
 void loop() {
+    // Handle BLE events
+    handleBLEEvents();
+
     // Check button
     checkButton();
-    
+
     // Handle serial commands
     handleSerialCommands();
-    
-    // Continuously send real-time data to web
+
+    // Continuously send real-time data to web and BLE
     sendContinuousWebData();
-    
+
     // Execute functions based on current state
     switch (currentState) {
         case STATE_IDLE:
@@ -206,7 +248,7 @@ void loop() {
             performSingleAnalysis();
             break;
     }
-    
+
     delay(10);
 }
 
@@ -256,47 +298,34 @@ void handleSerialCommands() {
 
 void startSingleAnalysis() {
     analysisCount++;
-    Serial.println("TensorFlowLiteInference initialized");
-        //n("========================================");
+    Serial.println("========================================");
     Serial.print("Starting analysis #");
     Serial.print(analysisCount);
-    Serial.println("TensorFlowLiteInference initialized");
-        //n(" for Parkinson's assessment...");
-    Serial.println("TensorFlowLiteInference initialized");
-        //n("========================================");
-    
+    Serial.println(" for Parkinson's assessment...");
+    Serial.println("========================================");
+
     if (!isCalibrated) {
-        Serial.println("TensorFlowLiteInference initialized");
-        //n("Calibration required. Starting auto-calibration...");
+        Serial.println("Calibration required. Starting auto-calibration...");
         startCalibration();
         return;
     }
-    
+
     currentState = STATE_REAL_TIME_ANALYSIS;
     lastInferenceTime = millis();
     digitalWrite(PIN_LED_STATUS, HIGH);
-    
-    Serial.println("TensorFlowLiteInference initialized");
-        //n("Single analysis started");
-    Serial.println("TensorFlowLiteInference initialized");
-        //n("System will perform:");
-    Serial.println("TensorFlowLiteInference initialized");
-        //n("  >> Finger flexibility assessment");
-    Serial.println("TensorFlowLiteInference initialized");
-        //n("  >> Tremor intensity measurement");
-    Serial.println("TensorFlowLiteInference initialized");
-        //n("  >> Motion coordination test");
-    Serial.println("TensorFlowLiteInference initialized");
-        //n("  >> Personalized rehabilitation advice");
-    Serial.println("TensorFlowLiteInference initialized");
-        //n("Estimated analysis time: 10-15 seconds");
-    Serial.println("TensorFlowLiteInference initialized");
-        //n("Please keep natural hand movements...");
+
+    Serial.println("Single analysis started");
+    Serial.println("System will perform:");
+    Serial.println("  >> Finger flexibility assessment");
+    Serial.println("  >> Tremor intensity measurement");
+    Serial.println("  >> Motion coordination test");
+    Serial.println("  >> Personalized rehabilitation advice");
+    Serial.println("Estimated analysis time: 10-15 seconds");
+    Serial.println("Please keep natural hand movements...");
 }
 
 void stopRealTimeAnalysis() {
-    Serial.println("TensorFlowLiteInference initialized");
-        //n("Real-time analysis stopped");
+    Serial.println("Real-time analysis stopped");
     currentState = STATE_IDLE;
     digitalWrite(PIN_LED_STATUS, LOW);
 }
@@ -364,42 +393,37 @@ void startCalibration() {
 
 void startDataCollection() {
     if (!isCalibrated) {
-        Serial.println("TensorFlowLiteInference initialized");
-        //n("Please calibrate first (send CALIBRATE command)");
+        Serial.println("Please calibrate first (send CALIBRATE command)");
         return;
     }
-    
-    Serial.println("TensorFlowLiteInference initialized");
-        //n("=== Starting Data Collection ===");
+
+    Serial.println("=== Starting Data Collection ===");
     currentState = STATE_COLLECTING;
-    
+
     unsigned long startTime = millis();
     int dataCount = 0;
-    
+
     while (millis() - startTime < 10000) {
         float sensorData[9];
         readNormalizedSensorData(sensorData);
-        
+
         // Send data packet
         Serial.print("DATA");
         for (int i = 0; i < 9; i++) {
             Serial.print(",");
             Serial.print(sensorData[i], 3);
         }
-        Serial.println("TensorFlowLiteInference initialized");
-        //n();
-        
+        Serial.println();
+
         dataCount++;
         delay(SAMPLE_RATE);
     }
-    
-    Serial.println("TensorFlowLiteInference initialized");
-        //n("END");
+
+    Serial.println("END");
     Serial.print("Data collection complete. Collected ");
     Serial.print(dataCount);
-    Serial.println("TensorFlowLiteInference initialized");
-        //n(" data points");
-    
+    Serial.println(" data points");
+
     currentState = STATE_IDLE;
 }
 
@@ -527,47 +551,30 @@ void performSingleAnalysis() {
 }
 
 void outputDetailedAnalysisResults() {
-    Serial.println("TensorFlowLiteInference initialized");
-        //n();
-    Serial.println("TensorFlowLiteInference initialized");
-        //n("=== AI Analysis Results ===");
-    Serial.print("Analysis count: ");
-    Serial.println("TensorFlowLiteInference initialized");
-        //n(analysisCount);
-    Serial.print("Parkinson's level: ");
-    Serial.print(currentParkinsonsLevel);
-    Serial.print(" (");
-    Serial.print(aiModel.getParkinsonLevelDescription(currentParkinsonsLevel));
-    Serial.println("TensorFlowLiteInference initialized");
-        //n(")");
-    Serial.print("Confidence: ");
-    Serial.print(currentConfidence * 100, 1);
-    Serial.println("TensorFlowLiteInference initialized");
-        //n("%");
-    
+    sendMessage("");
+    sendMessage("=== AI Analysis Results ===");
+    sendMessage("Analysis count: " + String(analysisCount));
+    sendMessage("Parkinson's level: " + String(currentParkinsonsLevel) + " (" +
+               aiModel.getParkinsonLevelDescription(currentParkinsonsLevel) + ")");
+    sendMessage("Confidence: " + String(currentConfidence * 100, 1) + "%");
+
     int recommendedResistance = map(currentParkinsonsLevel, 1, 5, 30, 150);
-    Serial.print("Recommended resistance setting: ");
-    Serial.print(recommendedResistance);
-    Serial.println("TensorFlowLiteInference initialized");
-        //n(" degrees");
-    
+    sendMessage("Recommended resistance setting: " + String(recommendedResistance) + " degrees");
+
     // Simplified recommendations
-    Serial.print("Training recommendation: ");
+    String recommendation = "Training recommendation: ";
     switch(currentParkinsonsLevel) {
-        case 1: Serial.println("TensorFlowLiteInference initialized");
-        //n("Maintain current training intensity"); break;
-        case 2: Serial.println("TensorFlowLiteInference initialized");
-        //n("Increase finger flexibility training"); break;
-        case 3: Serial.println("TensorFlowLiteInference initialized");
-        //n("Perform resistance training"); break;
-        case 4: Serial.println("TensorFlowLiteInference initialized");
-        //n("Seek professional guidance"); break;
-        case 5: Serial.println("TensorFlowLiteInference initialized");
-        //n("Seek immediate medical attention"); break;
+        case 1: recommendation += "Maintain current training intensity"; break;
+        case 2: recommendation += "Increase finger flexibility training"; break;
+        case 3: recommendation += "Perform resistance training"; break;
+        case 4: recommendation += "Seek professional guidance"; break;
+        case 5: recommendation += "Seek immediate medical attention"; break;
     }
-    
-    Serial.println("TensorFlowLiteInference initialized");
-        //n("======================");
+    sendMessage(recommendation);
+    sendMessage("======================");
+
+    // Send AI result via BLE
+    sendAIResultViaBLE();
 }
 
 float readFingerValue(int pin) {
@@ -675,17 +682,24 @@ void printSystemStatus() {
 }
 
 void sendContinuousWebData() {
-    // Continuously send real-time data to web
+    // Continuously send real-time data to web and BLE
     unsigned long currentTime = millis();
-    
+
     if (currentTime - lastWebDataTime >= WEB_DATA_INTERVAL) {
         // Read current sensor data (15 values: 5 fingers + EMG + 9 IMU)
         float sensorData[15];
         readRawSensorDataForWeb(sensorData);
-        
-        // Send data to web
-        sendRawDataToWeb(sensorData);
-        
+
+        // Send data to web (Serial)
+        if (commMode == COMM_SERIAL_ONLY || commMode == COMM_BOTH) {
+            sendRawDataToWeb(sensorData);
+        }
+
+        // Send data via BLE
+        if ((commMode == COMM_BLE_ONLY || commMode == COMM_BOTH) && bleConnected) {
+            sendDataViaBLE(sensorData);
+        }
+
         lastWebDataTime = currentTime;
     }
 }
@@ -780,5 +794,200 @@ void blinkError() {
         delay(100);
         digitalWrite(PIN_LED_STATUS, LOW);
         delay(100);
+    }
+}
+
+// ========== BLE Functions ==========
+
+void initializeBLE() {
+    Serial.println("Initializing BLE...");
+
+    if (!BLE.begin()) {
+        Serial.println("Starting BLE failed!");
+        return;
+    }
+    Serial.println("BLE started successfully");
+
+    // Set BLE device name and local name
+    BLE.setLocalName(BLE_DEVICE_NAME);
+    BLE.setDeviceName(BLE_DEVICE_NAME);
+    Serial.println("Device name set: " + String(BLE_DEVICE_NAME));
+
+    // Set event handlers
+    BLE.setEventHandler(BLEConnected, onBLEConnected);
+    BLE.setEventHandler(BLEDisconnected, onBLEDisconnected);
+    Serial.println("Event handlers set");
+
+    // Initialize characteristics with default values
+    sensorDataCharacteristic.writeValue("SENSOR_READY");
+    aiResultCharacteristic.writeValue("AI_READY");
+    Serial.println("Characteristics initialized");
+
+    // Set command characteristic event handler
+    commandCharacteristic.setEventHandler(BLEWritten, onCommandReceived);
+    Serial.println("Command handler set");
+
+    // Add characteristics to service
+    parkinsonService.addCharacteristic(sensorDataCharacteristic);
+    Serial.println("Sensor data characteristic added");
+
+    parkinsonService.addCharacteristic(commandCharacteristic);
+    Serial.println("Command characteristic added");
+
+    parkinsonService.addCharacteristic(aiResultCharacteristic);
+    Serial.println("AI result characteristic added");
+
+    // Add service to BLE
+    BLE.addService(parkinsonService);
+    Serial.println("Service added to BLE");
+
+    // Start advertising
+    BLE.advertise();
+    Serial.println("BLE advertising started");
+
+    Serial.println("=== BLE Configuration ===");
+    Serial.println("Device name: " + String(BLE_DEVICE_NAME));
+    Serial.println("Service UUID: " + String(BLE_SERVICE_UUID));
+    Serial.println("Sensor Data UUID: " + String(BLE_SENSOR_DATA_UUID));
+    Serial.println("Command UUID: " + String(BLE_COMMAND_UUID));
+    Serial.println("AI Result UUID: " + String(BLE_AI_RESULT_UUID));
+    Serial.println("BLE Parkinson Device is now advertising");
+}
+
+void handleBLEEvents() {
+    // Poll for BLE events
+    BLE.poll();
+}
+
+void sendDataViaBLE(float* rawData) {
+    if (!bleConnected) return;
+
+    // Create a CSV format data string for better compatibility
+    String dataString = "DATA,";
+
+    // Add finger data (5 values) - use 1 decimal place to save space
+    for (int i = 0; i < 5; i++) {
+        dataString += String(rawData[i], 1);
+        if (i < 4) dataString += ",";
+    }
+
+    // Add EMG data
+    dataString += "," + String(rawData[5], 1);
+
+    // Add IMU data (9 values) - use 2 decimal places for precision
+    for (int i = 6; i < 15; i++) {
+        dataString += "," + String(rawData[i], 2);
+    }
+
+    // Debug: print data string length and content
+    Serial.print("BLE Data String (");
+    Serial.print(dataString.length());
+    Serial.print(" chars): ");
+    Serial.println(dataString);
+
+    // Send via BLE - increase limit or split if necessary
+    if (dataString.length() <= 100) {  // Increased from 60 to 100
+        sensorDataCharacteristic.writeValue(dataString);
+    } else {
+        // If still too long, send in parts or reduce precision
+        Serial.println("Warning: BLE data too long, truncating");
+        dataString = dataString.substring(0, 100);
+        sensorDataCharacteristic.writeValue(dataString);
+    }
+}
+
+void sendAIResultViaBLE() {
+    if (!bleConnected || !hasValidPrediction) return;
+
+    // Create complete AI result packet in format: "LEVEL:2;CONF:85;REC:轻度震颤，建议进行康复训练;RES:45"
+    String recommendation = "Training recommendation: ";
+    switch (currentParkinsonsLevel) {
+        case 0: recommendation += "Maintain current training intensity"; break;
+        case 1: recommendation += "Maintain current training intensity"; break;
+        case 2: recommendation += "Increase finger flexibility training"; break;
+        case 3: recommendation += "Perform resistance training"; break;
+        case 4: recommendation += "Seek professional guidance"; break;
+        case 5: recommendation += "Seek immediate medical attention"; break;
+    }
+
+    int recommendedResistance = 30 + (currentParkinsonsLevel * 30); // 30-180度范围
+
+    String aiResult = "LEVEL:" + String(currentParkinsonsLevel) +
+                     ";CONF:" + String(currentConfidence * 100, 1) +
+                     ";REC:" + recommendation +
+                     ";RES:" + String(recommendedResistance);
+
+    aiResultCharacteristic.writeValue(aiResult);
+}
+
+void handleBLECommand(String command) {
+    command.trim();
+
+    if (command == "START") {
+        startDataCollection();
+    } else if (command == "TRAIN") {
+        startTraining();
+    } else if (command == "CALIBRATE") {
+        startCalibration();
+    } else if (command == "STATUS") {
+        printSystemStatus();
+    } else if (command.startsWith("SERVO")) {
+        int angle = command.substring(5).toInt();
+        controlServo(angle);
+    } else if (command == "STOP") {
+        stopRealTimeAnalysis();
+    } else if (command == "AUTO") {
+        startSingleAnalysis();
+    } else if (command == "COMM_SERIAL") {
+        commMode = COMM_SERIAL_ONLY;
+        sendMessage("Communication mode: Serial only");
+    } else if (command == "COMM_BLE") {
+        commMode = COMM_BLE_ONLY;
+        sendMessage("Communication mode: BLE only");
+    } else if (command == "COMM_BOTH") {
+        commMode = COMM_BOTH;
+        sendMessage("Communication mode: Both Serial and BLE");
+    }
+}
+
+void sendMessage(String message) {
+    // Send message via Serial
+    if (commMode == COMM_SERIAL_ONLY || commMode == COMM_BOTH) {
+        Serial.println(message);
+    }
+
+    // Send message via BLE (if connected and not too long)
+    if ((commMode == COMM_BLE_ONLY || commMode == COMM_BOTH) && bleConnected && message.length() <= 100) {
+        aiResultCharacteristic.writeValue(message.c_str());
+    }
+}
+
+void onBLEConnected(BLEDevice central) {
+    bleConnected = true;
+    digitalWrite(PIN_LED_STATUS, HIGH);
+
+    Serial.print("Connected to central: ");
+    Serial.println(central.address());
+
+    sendMessage("BLE Connected - Parkinson Device v2.0 Ready");
+}
+
+void onBLEDisconnected(BLEDevice central) {
+    bleConnected = false;
+    digitalWrite(PIN_LED_STATUS, LOW);
+
+    Serial.print("Disconnected from central: ");
+    Serial.println(central.address());
+}
+
+void onCommandReceived(BLEDevice central, BLECharacteristic characteristic) {
+    // Read the command as string
+    String command = commandCharacteristic.value();
+
+    if (command.length() > 0) {
+        Serial.print("BLE Command received: ");
+        Serial.println(command);
+
+        handleBLECommand(command);
     }
 }

@@ -197,6 +197,11 @@ export default function RecordsPage() {
   // 直接测试localStorage
   const testLocalStorage = () => {
     try {
+      if (typeof window === 'undefined' || !window.localStorage) {
+        alert('localStorage 不可用');
+        return;
+      }
+
       console.log('測試 localStorage...');
 
       // 直接写入测试数据

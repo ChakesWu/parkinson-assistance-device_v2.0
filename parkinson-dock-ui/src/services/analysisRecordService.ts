@@ -76,6 +76,9 @@ class AnalysisRecordService {
    */
   getAllRecords(): AnalysisRecord[] {
     try {
+      if (typeof window === 'undefined' || !window.localStorage) {
+        return [];
+      }
       const stored = localStorage.getItem(this.STORAGE_KEY);
       console.log('AnalysisRecordService: localStorage 數據', stored ? '存在' : '不存在');
 
@@ -272,7 +275,9 @@ class AnalysisRecordService {
    */
   private saveToStorage(records: AnalysisRecord[]): void {
     try {
-      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(records));
+      if (typeof window !== 'undefined' && window.localStorage) {
+        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(records));
+      }
     } catch (error) {
       console.error('Error saving analysis records:', error);
       throw new Error('Failed to save records to storage');

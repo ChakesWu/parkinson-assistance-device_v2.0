@@ -1,19 +1,26 @@
 /*
- * 完整的帕金森輔助裝置系統
- * 整合傳感器收集、AI推理、訓練控制的完整解決方案
- * 
+ * 完整的帕金森輔助裝置系統 - 藍牙增強版
+ * 整合傳感器收集、AI推理、訓練控制、藍牙通信的完整解決方案
+ *
  * 硬體需求:
  * - Arduino Nano 33 BLE Sense Rev2
  * - 5個電位器 (A0-A4)
  * - EMG傳感器 (A5)
  * - 舵機 (D9)
  * - 檢測引腳 (D2, D3)
+ *
+ * 新增功能:
+ * - 藍牙低功耗 (BLE) 連接
+ * - 無線數據傳輸
+ * - 遠程控制命令
+ * - 雙模式通信 (串口 + 藍牙)
  */
 
 #include <Arduino.h>
 #include "Arduino_BMI270_BMM150.h"
 #include <Servo.h>
 #include "TensorFlowLite_Inference.h"
+#include <ArduinoBLE.h>
 
 // 引腳定義
 #define PIN_PINKY     A0
@@ -31,6 +38,23 @@
 // 按鈕和LED
 #define PIN_BUTTON        4
 #define PIN_LED_STATUS    LED_BUILTIN
+
+// ===== 藍牙BLE服務和特徵值定義 =====
+// 帕金森輔助設備專用UUID (基於標準UUID生成)
+#define PARKINSON_SERVICE_UUID        "19B10000-E8F2-537E-4F6C-D104768A1214"
+#define SENSOR_DATA_CHAR_UUID         "19B10001-E8F2-537E-4F6C-D104768A1214"  // 傳感器數據特徵
+#define CONTROL_COMMAND_CHAR_UUID     "19B10002-E8F2-537E-4F6C-D104768A1214"  // 控制命令特徵
+#define DEVICE_STATUS_CHAR_UUID       "19B10003-E8F2-537E-4F6C-D104768A1214"  // 設備狀態特徵
+#define AI_RESULT_CHAR_UUID           "19B10004-E8F2-537E-4F6C-D104768A1214"  // AI分析結果特徵
+#define TRAINING_DATA_CHAR_UUID       "19B10005-E8F2-537E-4F6C-D104768A1214"  // 訓練數據特徵
+
+// BLE服務和特徵值對象
+BLEService parkinsonService(PARKINSON_SERVICE_UUID);
+BLECharacteristic sensorDataChar(SENSOR_DATA_CHAR_UUID, BLERead | BLENotify, 60);  // 傳感器數據 (15個float值)
+BLECharacteristic controlCommandChar(CONTROL_COMMAND_CHAR_UUID, BLEWrite, 20);     // 控制命令
+BLECharacteristic deviceStatusChar(DEVICE_STATUS_CHAR_UUID, BLERead | BLENotify, 50); // 設備狀態
+BLECharacteristic aiResultChar(AI_RESULT_CHAR_UUID, BLERead | BLENotify, 30);      // AI分析結果
+BLECharacteristic trainingDataChar(TRAINING_DATA_CHAR_UUID, BLERead | BLENotify, 40); // 訓練數據
 
 // 系統參數
 const unsigned long SAMPLE_RATE = 100;        // 採樣間隔(ms)
@@ -61,6 +85,15 @@ unsigned long lastWebDataTime = 0;       // 新增：上次發送網頁數據時
 // analysisCompleteTime 已移除 - 單次分析模式不需要自動重啟
 int analysisCount = 0;                   // 新增：分析次數計數器
 
+// ===== 藍牙相關變量 =====
+bool bleEnabled = false;                 // 藍牙啟用狀態
+bool bleConnected = false;               // 藍牙連接狀態
+unsigned long lastBleDataTime = 0;       // 上次發送藍牙數據時間
+unsigned long lastBleStatusTime = 0;     // 上次發送狀態時間
+String bleDeviceName = "ParkinsonDevice"; // 藍牙設備名稱
+unsigned long bleConnectionTime = 0;     // 藍牙連接時間
+int bleDataPacketCount = 0;              // 藍牙數據包計數器
+
 // 網頁數據發送間隔 (毫秒)
 const unsigned long WEB_DATA_INTERVAL = 100;  // 10Hz，優化3D模型性能
 
@@ -87,74 +120,102 @@ bool isTraining = false;
 void setup() {
     Serial.begin(9600);
     while (!Serial);
-    
+
     // 初始化引腳
     pinMode(PIN_POT_DETECT, INPUT_PULLUP);  // 改為上拉輸入
     pinMode(PIN_EMG_DETECT, INPUT_PULLUP);  // 改為上拉輸入
     pinMode(PIN_BUTTON, INPUT_PULLUP);
     pinMode(PIN_LED_STATUS, OUTPUT);
-    
+
     // 初始化IMU
     if (!IMU.begin()) {
         Serial.println("ERROR: IMU初始化失敗!");
         blinkError();
         while (1);
     }
-    
+
     // 初始化舵機
     rehabServo.attach(PIN_SERVO);
     rehabServo.write(90);
-    
+
     // 初始化AI模型
     aiModel.begin();
-    
-    Serial.println("SYSTEM: 帕金森輔助裝置已啟動");
+
+    // ===== 初始化藍牙BLE =====
+    if (initializeBLE()) {
+        Serial.println("SYSTEM: 藍牙BLE初始化成功");
+        bleEnabled = true;
+    } else {
+        Serial.println("WARNING: 藍牙BLE初始化失敗，僅使用串口模式");
+        bleEnabled = false;
+    }
+
+    Serial.println("SYSTEM: 帕金森輔助裝置已啟動 (藍牙增強版)");
     Serial.println("SYSTEM: 按按鈕開始實時分析");
-    
+
     // 顯示初始設備狀態
     Serial.println("=== 設備檢測 ===");
     Serial.print("電位器檢測引腳(D2): ");
     Serial.println(digitalRead(PIN_POT_DETECT) == HIGH ? "HIGH" : "LOW");
     Serial.print("EMG檢測引腳(D3): ");
     Serial.println(digitalRead(PIN_EMG_DETECT) == HIGH ? "HIGH" : "LOW");
+    Serial.print("藍牙BLE狀態: ");
+    Serial.println(bleEnabled ? "已啟用" : "未啟用");
+    if (bleEnabled) {
+        Serial.print("藍牙設備名稱: ");
+        Serial.println(bleDeviceName);
+        Serial.print("藍牙MAC地址: ");
+        Serial.println(BLE.address());
+    }
     Serial.println("================");
 }
 
 void loop() {
     // 檢查按鈕（可選，如果有連接按鈕）
     // checkButton();
-    
+
+    // ===== 處理藍牙BLE連接和命令 =====
+    if (bleEnabled) {
+        handleBLEConnection();
+        handleBLECommands();
+    }
+
     // 處理串口命令
     handleSerialCommands();
-    
+
     // *** 新增：持續發送實時數據給網頁 ***
     sendContinuousWebData();
-    
+
+    // *** 新增：持續發送實時數據給藍牙設備 ***
+    if (bleEnabled && bleConnected) {
+        sendContinuousBLEData();
+    }
+
     // 根據當前狀態執行相應功能
     switch (currentState) {
         case STATE_IDLE:
             // 空閒狀態，等待命令
             break;
-            
+
         case STATE_CALIBRATING:
             startCalibration();
             break;
-            
+
         case STATE_COLLECTING:
             startDataCollection();
             break;
-            
+
         case STATE_TRAINING:
             startTraining();
             break;
-            
+
         case STATE_REAL_TIME_ANALYSIS:
             performSingleAnalysis();
             break;
-            
+
         // STATE_WAITING_RESTART 已移除 - 單次分析模式不需要自動重啟
     }
-    
+
     delay(10);
 }
 

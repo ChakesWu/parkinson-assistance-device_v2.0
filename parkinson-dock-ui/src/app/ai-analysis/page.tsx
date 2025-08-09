@@ -6,6 +6,9 @@ import { AnimatedDock } from "@/components/ui/animated-dock";
 import { BrainCircuit, Home, Activity, Book, Settings, Brain } from 'lucide-react';
 import { getRecommendations, classifySeverity } from '@/lib/ai/recommendations';
 import { analysisRecordService } from '@/services/analysisRecordService';
+import { useGlobalConnection } from '@/hooks/useGlobalConnection';
+import GlobalConnector from '@/components/device/GlobalConnector';
+import { SensorData, AIResult } from '@/utils/bluetoothManager';
 
 type SerialPortLike = any;
 
@@ -28,12 +31,20 @@ export default function AIAnalysisPage() {
   const [groups, setGroups] = useState<ReturnType<typeof getRecommendations>>([]);
 
   // 連線/採集狀態
-  const [isConnected, setIsConnected] = useState(false);
   const [isCollecting, setIsCollecting] = useState(false);
-  const portRef = useRef<SerialPortLike | null>(null);
-  const readerRef = useRef<ReadableStreamDefaultReader<string> | null>(null);
-  const writerRef = useRef<WritableStreamDefaultWriter<string> | null>(null);
   const lineBufferRef = useRef<string>('');
+
+  // 使用全局连接管理器
+  const {
+    isConnected,
+    connectionType,
+    deviceName,
+    sendCommand,
+    error: connectionError
+  } = useGlobalConnection({
+    onDataReceived: handleGlobalDataReceived,
+    onAIResultReceived: handleGlobalAIResult
+  });
 
   // 10秒資料緩存
   const sessionStartRef = useRef<number | null>(null);
@@ -50,6 +61,49 @@ export default function AIAnalysisPage() {
     { link: "/ai-analysis", Icon: <Brain size={22} /> },
     { link: "/settings", Icon: <Settings size={22} /> },
   ];
+
+  // 处理全局连接的数据接收
+  function handleGlobalDataReceived(data: SensorData) {
+    // 更新传感器数据显示
+    setSensorData({
+      fingerPositions: data.fingers.map(v => Math.round((v / 1023) * 100)),
+      accelerometer: data.accel,
+      gyroscope: data.gyro,
+      emg: data.emg || 0,
+    });
+
+    // 如果正在采集，添加到时间序列
+    if (isCollecting) {
+      const now = performance.now();
+      tsSeriesRef.current.push(now);
+
+      for (let i = 0; i < 5; i++) {
+        fingerSeriesRef.current[i].push(data.fingers[i] ?? 0);
+      }
+
+      accelSeriesRef.current.x.push(data.accel.x ?? 0);
+      accelSeriesRef.current.y.push(data.accel.y ?? 0);
+      accelSeriesRef.current.z.push(data.accel.z ?? 0);
+      emgSeriesRef.current.push(data.emg ?? 0);
+    }
+  }
+
+  // 处理全局连接的AI结果
+  function handleGlobalAIResult(result: AIResult) {
+    const severity = (result.parkinsonLevel / 5) * 100; // 转换为0-100范围
+    const { stage, confidencePercent } = classifySeverity(severity);
+
+    setPrediction(severity);
+    const newAnalysisData = {
+      analysisCount: result.analysisCount,
+      confidence: result.confidence,
+      recommendation: `AI分析结果: ${stage}`,
+      recommendedResistance: Math.round(30 + (result.parkinsonLevel - 1) * 30),
+    };
+    setAnalysisData(newAnalysisData);
+    setGroups(getRecommendations(severity));
+    setIsCollecting(false);
+  }
 
   // 監聽父頁提供的資料（可選）
   useEffect(() => {
@@ -81,64 +135,10 @@ export default function AIAnalysisPage() {
     };
   }, []);
 
-  // 串口連線
-  const ensureSerialConnected = async () => {
-    if (!('serial' in navigator)) throw new Error('此瀏覽器不支援 Web Serial，請使用 Chrome/Edge');
-
-    // 如果已经连接且端口有效，直接返回
-    if (isConnected && portRef.current && readerRef.current && writerRef.current) {
-      console.log('串口已連接，跳過重新連接');
-      return;
-    }
-
-    console.log('開始建立串口連接...');
-    const port = await (navigator as any).serial.requestPort();
-    await port.open({ baudRate: 9600 }); // 與韌體一致（若你用 115200，請改這裡）
-
-    // 設置解碼器與讀取器
-    const textDecoder = new (window as any).TextDecoderStream();
-    port.readable.pipeTo(textDecoder.writable);
-    const reader = textDecoder.readable.getReader();
-    readerRef.current = reader as any;
-
-    // 設置編碼器與寫入器
-    const textEncoder = new (window as any).TextEncoderStream();
-    textEncoder.readable.pipeTo(port.writable);
-    const writer = textEncoder.writable.getWriter();
-    writerRef.current = writer as any;
-
-    portRef.current = port;
-    setIsConnected(true);
-    console.log('串口連接成功');
-  };
-
-  const closeSerial = async () => {
-    try {
-      if (readerRef.current) {
-        try { await readerRef.current.cancel(); } catch {}
-        readerRef.current = null;
-      }
-      if (writerRef.current) {
-        try { await writerRef.current.close(); } catch {}
-        writerRef.current = null;
-      }
-      if (portRef.current) {
-        try { await portRef.current.close(); } catch {}
-        portRef.current = null;
-      }
-    } finally {
-      setIsConnected(false);
-    }
-  };
-
-  // 手动连接串口
-  const handleManualConnect = async () => {
-    try {
-      await ensureSerialConnected();
-    } catch (error) {
-      console.error('手動連接失敗:', error);
-      alert(`連接失敗: ${error}`);
-    }
+  // 简化的连接状态显示（使用全局连接管理器）
+  const getConnectionStatusText = () => {
+    if (!isConnected) return '未连接';
+    return `已连接 (${connectionType === 'serial' ? '串口' : '蓝牙'})`;
   };
 
   // 测试记录保存功能
@@ -168,10 +168,13 @@ export default function AIAnalysisPage() {
     }
   };
 
-  // 串口寫入命令
-  const sendCommand = async (cmd: string) => {
-    if (!writerRef.current) return;
-    await writerRef.current.write(cmd.endsWith('\n') ? cmd : cmd + '\n');
+  // 发送命令（使用全局连接管理器）
+  const handleSendCommand = async (cmd: string) => {
+    try {
+      await sendCommand(cmd);
+    } catch (error) {
+      console.error('发送命令失败:', error);
+    }
   };
 
   // 解析 DATA 行（支援 16 欄或 10 欄）
@@ -202,6 +205,11 @@ export default function AIAnalysisPage() {
 
   // 開始 10 秒採集與分析
   const startTenSecondAnalysis = async () => {
+    if (!isConnected) {
+      alert('请先连接设备');
+      return;
+    }
+
     setIsLoading(true);
     setPrediction(null);
     setGroups([]);
@@ -213,55 +221,19 @@ export default function AIAnalysisPage() {
     tsSeriesRef.current = [];
 
     try {
-      await ensureSerialConnected();
-      // 啟動裝置採集
-      await sendCommand('START');
+      // 启动设备采集
+      await handleSendCommand('START');
       setIsCollecting(true);
       sessionStartRef.current = performance.now();
 
-      // 讀取 10 秒
-      const deadline = sessionStartRef.current + 10000;
-      while (performance.now() < deadline) {
-        if (!readerRef.current) break;
-        const { value, done } = await readerRef.current.read();
-        if (done) break;
-        if (value) {
-          lineBufferRef.current += value as string;
-          const lines = lineBufferRef.current.split('\n');
-          lineBufferRef.current = lines.pop() ?? '';
-          for (const raw of lines) {
-            const trimmed = raw.trim();
-            if (!trimmed) continue;
-            if (trimmed === 'END') {
-              // 裝置主動結束
-              sessionStartRef.current = sessionStartRef.current ?? performance.now() - 10000;
-              break;
-            }
-            const parsed = parseDataLine(trimmed);
-            if (parsed) {
-              const now = performance.now();
-              tsSeriesRef.current.push(now);
-              for (let i = 0; i < 5; i++) {
-                fingerSeriesRef.current[i].push(parsed.fingers[i] ?? 0);
-              }
-              accelSeriesRef.current.x.push(parsed.accel.x ?? 0);
-              accelSeriesRef.current.y.push(parsed.accel.y ?? 0);
-              accelSeriesRef.current.z.push(parsed.accel.z ?? 0);
-              emgSeriesRef.current.push(parsed.emg ?? 0);
-              // 即時顯示
-              setSensorData({
-                fingerPositions: parsed.fingers.map(v => Math.round((v / 1023) * 100)),
-                accelerometer: parsed.accel,
-                gyroscope: parsed.gyro,
-                emg: parsed.emg ?? 0,
-              });
-            }
-          }
-        }
-      }
+      // 等待 10 秒采集数据
+      await new Promise(resolve => setTimeout(resolve, 10000));
+
+      // 停止采集
+      setIsCollecting(false);
+      await handleSendCommand('STOP');
     } catch (e) {
       console.error('採集失敗', e);
-    } finally {
       setIsCollecting(false);
     }
 
@@ -424,43 +396,26 @@ export default function AIAnalysisPage() {
           </div>
         </div>
 
+        {/* 连接错误提示 */}
+        {connectionError && (
+          <div className="mb-6 p-4 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded-lg">
+            <div className="flex items-center space-x-2">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>{connectionError}</span>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-          {/* 设备连接状态卡片 */}
-          <div className="bg-white dark:bg-neutral-800 rounded-xl shadow-lg p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">設備連接</h2>
-              <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
-            </div>
-
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-neutral-700 rounded-lg">
-                <span className="text-gray-700 dark:text-gray-300">
-                  {isConnected ? '已連接 Arduino' : '未連接 Arduino'}
-                </span>
-                <span className={`text-sm font-medium ${isConnected ? 'text-green-600' : 'text-red-600'}`}>
-                  {isConnected ? '在線' : '離線'}
-                </span>
-              </div>
-
-              <div className="flex gap-2">
-                {!isConnected ? (
-                  <Button
-                    onClick={handleManualConnect}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700"
-                  >
-                    連接設備
-                  </Button>
-                ) : (
-                  <Button
-                    onClick={closeSerial}
-                    variant="outline"
-                    className="flex-1 border-red-500 text-red-500 hover:bg-red-500 hover:text-white"
-                  >
-                    斷開連接
-                  </Button>
-                )}
-              </div>
-            </div>
+          {/* 全局设备连接器 */}
+          <div className="xl:col-span-1">
+            <GlobalConnector
+              showSensorData={false}
+              showConnectionControls={true}
+              compact={false}
+            />
           </div>
 
           {/* 传感器数据卡片 */}

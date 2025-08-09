@@ -3,6 +3,7 @@ import HeroSection from "@/components/ui/hero-section";
 import { AnimatedDock } from "@/components/ui/animated-dock";
 import AnimatedCardDemo from "@/components/ui/animated-card-demo";
 import ParkinsonTestimonials from "@/components/ui/parkinson-testimonials";
+import SimpleLightweightIndicator from "@/components/device/SimpleLightweightIndicator";
 import { Home, Activity, Book, Settings, Brain } from 'lucide-react';
 
 export default function HomePage() {
@@ -31,6 +32,11 @@ export default function HomePage() {
 
   return (
     <div className="relative">
+      {/* 轻量级连接状态指示器 */}
+      <div className="fixed top-4 right-4 z-50 bg-white dark:bg-neutral-800 rounded-lg p-3 shadow-lg">
+        <SimpleLightweightIndicator />
+      </div>
+
       <div className="min-h-screen">
         <HeroSection
           title="欢迎使用帕金森辅助系统"

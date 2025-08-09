@@ -122,16 +122,29 @@ export default function SimpleHand3D({ sensorData }: { sensorData: SensorData | 
   }, []);
 
   useEffect(() => {
+    console.log('🎮 SimpleHand3D received sensorData:', sensorData);
     if (sensorData && handGroupRef.current) {
+      console.log('✅ Updating 3D hand model with data:', {
+        fingers: sensorData.fingers,
+        rotation: sensorData.rotation
+      });
+
       // 更新手指弯曲
       sensorData.fingers.forEach((value, index) => {
         if (index < 5 && fingerGroupsRef.current[index]) {
+          console.log(`👆 Updating finger ${index} to value ${value}`);
           updateFingerBending(index, value);
         }
       });
 
       // 更新手部旋转
+      console.log('🔄 Updating hand rotation:', sensorData.rotation);
       updateHandRotation(sensorData.rotation);
+    } else {
+      console.log('❌ Cannot update 3D hand:', {
+        hasSensorData: !!sensorData,
+        hasHandGroup: !!handGroupRef.current
+      });
     }
   }, [sensorData]);
 

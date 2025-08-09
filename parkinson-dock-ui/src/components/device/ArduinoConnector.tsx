@@ -43,7 +43,7 @@ export default function ArduinoConnector({ onDataReceived }: ArduinoConnectorPro
 
   // 檢查瀏覽器是否支持Web Serial API
   const isWebSerialSupported = () => {
-    return 'serial' in navigator;
+    return typeof window !== 'undefined' && typeof navigator !== 'undefined' && 'serial' in navigator;
   };
 
   const sendCommand = async (command: string) => {

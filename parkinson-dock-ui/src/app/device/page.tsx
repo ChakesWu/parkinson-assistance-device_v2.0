@@ -1,7 +1,9 @@
 'use client';
 import HandModel from '@/components/device/HandModel';
 import SimpleHand3D from '@/components/device/SimpleHand3D';
-import ArduinoConnector, { type ArduinoConnectorProps } from '@/components/device/ArduinoConnector';
+import GlobalConnector from '@/components/device/GlobalConnector';
+import { useConnectionState } from '@/hooks/useGlobalConnection';
+import { SensorData } from '@/utils/bluetoothManager';
 import { Sidebar, SidebarBody, SidebarLink } from "@/components/ui/sidebar";
 import { AnimatedDock } from "@/components/ui/animated-dock";
 import { LayoutDashboard, Bug, Settings, MousePointer, Move3d, User, Home, Activity, Book, Brain } from 'lucide-react';
@@ -25,22 +27,28 @@ export default function DevicePage() {
   const [controlMode, setControlMode] = useState<'mouse' | 'imu'>('mouse');
   const [open, setOpen] = useState(false);
 
-  const handleDataReceived: ArduinoConnectorProps['onDataReceived'] = (data) => {
-    setSensorData((prev: any) => ({ ...(prev || {}), ...(data || {}) }));
-    console.log('Received sensor data:', data);
+  const handleDataReceived = (data: Partial<SensorData>) => {
+    console.log('🔄 Device page received sensor data:', data);
+    setSensorData((prev: any) => {
+      const newData = { ...(prev || {}), ...(data || {}) };
+      console.log('📊 Updated sensor data state:', newData);
+      return newData;
+    });
 
     // 保存到localStorage供调试页面使用
-    localStorage.setItem('sensorData', JSON.stringify(data));
+    if (typeof window !== 'undefined' && window.localStorage) {
+      localStorage.setItem('sensorData', JSON.stringify(data));
+    }
 
     // 調試信息：顯示接收到的數據
     if (data.fingers) {
-      console.log('手指數據:', data.fingers);
+      console.log('👆 手指數據:', data.fingers);
     }
     if (data.accel) {
-      console.log('加速度計數據:', data.accel);
+      console.log('📱 加速度計數據:', data.accel);
     }
     if (data.gyro) {
-      console.log('陀螺儀數據:', data.gyro);
+      console.log('🌀 陀螺儀數據:', data.gyro);
     }
   };
 
@@ -113,6 +121,19 @@ export default function DevicePage() {
     setControlMode(prevMode => prevMode === 'mouse' ? 'imu' : 'mouse');
   };
 
+  // 测试函数：模拟传感器数据
+  const testSensorData = () => {
+    const testData = {
+      fingers: [200, 300, 400, 500, 600],
+      accel: { x: 0.1, y: 0.2, z: 0.9 },
+      gyro: { x: 0.05, y: -0.1, z: 0.02 },
+      mag: { x: 0, y: 0, z: 0 },
+      emg: 100
+    };
+    console.log('🧪 Testing with simulated data:', testData);
+    handleDataReceived(testData);
+  };
+
   return (
     <div
       className={cn(
@@ -152,6 +173,7 @@ export default function DevicePage() {
         rotation={rotation}
         displayData={displayData}
         dockItems={dockItems}
+        testSensorData={testSensorData}
       />
     </div>
   );
@@ -195,31 +217,46 @@ const Dashboard = ({
   fingerBend,
   rotation,
   displayData,
-  dockItems
+  dockItems,
+  testSensorData
 }: {
   sensorData: any;
   controlMode: 'mouse' | 'imu';
-  onDataReceived: ArduinoConnectorProps['onDataReceived'];
+  onDataReceived: (data: Partial<SensorData>) => void;
   onToggleControlMode: () => void;
   fingerBend: number[];
   rotation: { x: number; y: number; z: number };
   displayData: SensorDataForDisplay;
   dockItems: any[];
+  testSensorData: () => void;
 }) => {
   return (
     <div className="flex flex-1 relative">
       <div className="p-2 md:p-6 rounded-tl-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 flex flex-col gap-4 flex-1 w-full h-full overflow-y-auto">
         <div className="flex justify-between items-center">
           <h1 className="text-2xl font-bold">數據台</h1>
-          <div className="text-sm text-gray-500">
-            連接狀態: {sensorData ? '已連接' : '未連接'} |
-            旋轉角度: X:{rotation.x.toFixed(3)}, Y:{rotation.y.toFixed(3)}, Z:{rotation.z.toFixed(3)} |
-            控制模式: {controlMode}
+          <div className="flex items-center gap-4">
+            <button
+              onClick={testSensorData}
+              className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg transition text-sm"
+            >
+              🧪 測試數據
+            </button>
+            <div className="text-sm text-gray-500">
+              連接狀態: {sensorData ? '已連接' : '未連接'} |
+              旋轉角度: X:{rotation.x.toFixed(3)}, Y:{rotation.y.toFixed(3)}, Z:{rotation.z.toFixed(3)} |
+              控制模式: {controlMode}
+            </div>
           </div>
         </div>
 
         <div className="mb-4">
-          <ArduinoConnector onDataReceived={onDataReceived} />
+          <GlobalConnector
+            onDataReceived={onDataReceived}
+            showSensorData={true}
+            showConnectionControls={true}
+            compact={false}
+          />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 flex-1">
