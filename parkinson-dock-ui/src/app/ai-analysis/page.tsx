@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { AnimatedDock } from "@/components/ui/animated-dock";
 import { BrainCircuit, Home, Activity, Book, Settings, Brain } from 'lucide-react';
 import { getRecommendations, classifySeverity } from '@/lib/ai/recommendations';
+import { analysisRecordService } from '@/services/analysisRecordService';
 
 type SerialPortLike = any;
 
@@ -83,21 +84,32 @@ export default function AIAnalysisPage() {
   // 串口連線
   const ensureSerialConnected = async () => {
     if (!('serial' in navigator)) throw new Error('此瀏覽器不支援 Web Serial，請使用 Chrome/Edge');
-    if (isConnected && portRef.current) return;
+
+    // 如果已经连接且端口有效，直接返回
+    if (isConnected && portRef.current && readerRef.current && writerRef.current) {
+      console.log('串口已連接，跳過重新連接');
+      return;
+    }
+
+    console.log('開始建立串口連接...');
     const port = await (navigator as any).serial.requestPort();
     await port.open({ baudRate: 9600 }); // 與韌體一致（若你用 115200，請改這裡）
+
     // 設置解碼器與讀取器
     const textDecoder = new (window as any).TextDecoderStream();
     port.readable.pipeTo(textDecoder.writable);
     const reader = textDecoder.readable.getReader();
     readerRef.current = reader as any;
+
     // 設置編碼器與寫入器
     const textEncoder = new (window as any).TextEncoderStream();
     textEncoder.readable.pipeTo(port.writable);
     const writer = textEncoder.writable.getWriter();
     writerRef.current = writer as any;
+
     portRef.current = port;
     setIsConnected(true);
+    console.log('串口連接成功');
   };
 
   const closeSerial = async () => {
@@ -116,6 +128,43 @@ export default function AIAnalysisPage() {
       }
     } finally {
       setIsConnected(false);
+    }
+  };
+
+  // 手动连接串口
+  const handleManualConnect = async () => {
+    try {
+      await ensureSerialConnected();
+    } catch (error) {
+      console.error('手動連接失敗:', error);
+      alert(`連接失敗: ${error}`);
+    }
+  };
+
+  // 测试记录保存功能
+  const testRecordSaving = () => {
+    try {
+      const testRecord = analysisRecordService.saveRecord({
+        analysisCount: 999,
+        parkinsonLevel: 2,
+        parkinsonDescription: '測試記錄',
+        confidence: 85.5,
+        recommendation: '這是一個測試記錄',
+        recommendedResistance: 45,
+        sensorData: {
+          fingerPositions: [45, 52, 38, 41, 49],
+          accelerometer: { x: 0.12, y: -0.34, z: 0.98 },
+          gyroscope: { x: 1.2, y: -0.8, z: 0.3 },
+          emg: 234,
+        },
+        source: 'web-analysis',
+        duration: 10,
+      });
+      console.log('測試記錄已保存:', testRecord);
+      alert('測試記錄已保存，請檢查 Records 頁面');
+    } catch (error) {
+      console.error('測試記錄保存失敗:', error);
+      alert('測試記錄保存失敗');
     }
   };
 
@@ -228,13 +277,58 @@ export default function AIAnalysisPage() {
       else if (severity >= 40) recommendedResistance = 40;
 
       setPrediction(severity);
-      setAnalysisData(prev => ({
-        analysisCount: prev.analysisCount + 1,
-        confidence: prev.confidence || confidencePercent,
+      const newAnalysisData = {
+        analysisCount: analysisData.analysisCount + 1,
+        confidence: analysisData.confidence || confidencePercent,
         recommendation: res.summary,
         recommendedResistance,
-      }));
+      };
+      setAnalysisData(newAnalysisData);
       setGroups(getRecommendations(severity));
+
+      // 保存分析记录
+      try {
+        // 计算帕金森等级 (0-100 severity -> 0-5 level)
+        const parkinsonLevel = Math.min(5, Math.max(0, Math.round(severity / 20)));
+
+        console.log('準備保存分析記錄:', {
+          severity,
+          parkinsonLevel,
+          stage,
+          confidencePercent,
+          analysisCount: newAnalysisData.analysisCount
+        });
+
+        const record = analysisRecordService.saveRecord({
+          analysisCount: newAnalysisData.analysisCount,
+          parkinsonLevel,
+          parkinsonDescription: stage,
+          confidence: confidencePercent,
+          recommendation: res.summary,
+          recommendedResistance,
+          sensorData: {
+            fingerPositions: sensorData.fingerPositions,
+            accelerometer: sensorData.accelerometer,
+            gyroscope: sensorData.gyroscope,
+            emg: sensorData.emg,
+          },
+          analysisDetails: {
+            tremorFrequency: res.tremorHz,
+            graspQuality: res.graspQualityPerFinger?.[2], // 中指的抓握质量
+            emgRms: res.emgRms,
+            overallSeverity: severity,
+            fingerSummary: res.fingerSummary,
+            tremorSummary: res.tremorSummary,
+            emgSummary: res.emgSummary,
+          },
+          source: 'web-analysis',
+          // 使用 computeFinalAssessment 計算期間的時長估計（採集設計為 10 秒）
+          duration: 10,
+        });
+        console.log('分析記錄已成功保存:', record);
+      } catch (error) {
+        console.error('保存分析記錄失敗:', error);
+      }
     } catch (e) {
       console.error('分析計算失敗', e);
       setPrediction(null);
@@ -304,171 +398,310 @@ export default function AIAnalysisPage() {
 
     const summary = `${fingerSummary}；${tremorSummary}；${emgSummary}`;
 
-    return { overallSeverity, fingerSummary, tremorSummary, emgSummary, summary };
+    return {
+      overallSeverity,
+      fingerSummary,
+      tremorSummary,
+      emgSummary,
+      summary,
+      tremorHz,
+      graspQualityPerFinger,
+      emgRms
+    };
   };
 
   return (
-    <div className="min-h-screen p-6 bg-gradient-to-br from-purple-900 via-purple-800 to-black">
-      <div className="max-w-4xl mx-auto">
-        <div className="flex items-center mb-6">
-          <BrainCircuit className="h-8 w-8 mr-2 text-purple-400" />
-          <h1 className="text-2xl font-bold text-white">AI 症狀分析</h1>
+    <>
+      <div className="min-h-screen bg-gray-50 dark:bg-neutral-900">
+        <main className="container mx-auto py-12 px-4">
+          <div className="flex justify-between items-center mb-8">
+          <div className="flex items-center">
+            <BrainCircuit className="h-8 w-8 mr-3 text-blue-600" />
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">AI 症狀分析</h1>
+          </div>
+          <div className="text-sm text-gray-500 dark:text-gray-400">
+            智能帕金森症狀評估系統
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card className="h-full">
-            <CardHeader>
-              <CardTitle className="text-white">即時傳感器數據</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div>
-                  <h3 className="font-medium mb-2 text-purple-200">手指彎曲度</h3>
-                  {sensorData.fingerPositions.map((value, index) => (
-                    <div key={index} className="flex items-center mb-1">
-                      <span className="w-16 text-gray-300">手指 {index + 1}:</span>
-                      <span className="font-medium text-white">{value}%</span>
-                    </div>
-                  ))}
-                </div>
-                
-                <div>
-                  <h3 className="font-medium mb-2 text-purple-200">加速度計 (g)</h3>
-                  <div className="space-y-1 text-white">
-                    <div>X: {sensorData.accelerometer.x.toFixed(2)}</div>
-                    <div>Y: {sensorData.accelerometer.y.toFixed(2)}</div>
-                    <div>Z: {sensorData.accelerometer.z.toFixed(2)}</div>
-                  </div>
-                </div>
-                
-                <div>
-                  <h3 className="font-medium mb-2 text-purple-200">陀螺儀 (deg/s)</h3>
-                  <div className="space-y-1 text-white">
-                    <div>X: {sensorData.gyroscope.x.toFixed(2)}</div>
-                    <div>Y: {sensorData.gyroscope.y.toFixed(2)}</div>
-                    <div>Z: {sensorData.gyroscope.z.toFixed(2)}</div>
-                  </div>
-                </div>
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+          {/* 设备连接状态卡片 */}
+          <div className="bg-white dark:bg-neutral-800 rounded-xl shadow-lg p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">設備連接</h2>
+              <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+            </div>
 
-                <div>
-                  <h3 className="font-medium mb-2 text-purple-200">EMG</h3>
-                  <div className="text-white">{sensorData.emg?.toFixed ? sensorData.emg.toFixed(0) : sensorData.emg}</div>
-                </div>
-
-                <div className="text-xs text-purple-200/70">
-                  {isConnected ? '裝置已連接' : '裝置未連接'} {isCollecting && '· 正在採集 10 秒'}
-                </div>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-neutral-700 rounded-lg">
+                <span className="text-gray-700 dark:text-gray-300">
+                  {isConnected ? '已連接 Arduino' : '未連接 Arduino'}
+                </span>
+                <span className={`text-sm font-medium ${isConnected ? 'text-green-600' : 'text-red-600'}`}>
+                  {isConnected ? '在線' : '離線'}
+                </span>
               </div>
-            </CardContent>
-          </Card>
 
-          <div className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-white">AI 分析引擎</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-col items-center gap-3">
-                  <div className="w-full flex gap-2">
-                    <Button
-                      onClick={startTenSecondAnalysis}
-                      disabled={isLoading}
-                      className="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-3 px-6 rounded-lg transition"
-                    >
-                      {isLoading ? '分析中...' : '開始症狀分析（採集10秒）'}
-                    </Button>
-                    {isConnected ? (
-                      <Button variant="secondary" onClick={closeSerial}>斷開</Button>
-                    ) : (
-                      <Button variant="secondary" onClick={ensureSerialConnected}>連接</Button>
-                    )}
-                  </div>
-                  
-                  {prediction !== null && (
-                    <div className="w-full">
-                      <h3 className="text-lg font-semibold mb-4 text-white">分析結果</h3>
-                      
-                      <div className="bg-gradient-to-r from-purple-600 to-indigo-700 rounded-xl p-6 text-white">
-                        <div className="mb-4">
-                          <div className="flex justify-between">
-                            <span>分析編號</span>
-                            <span className="font-bold">#{analysisData.analysisCount}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>置信度</span>
-                            <span className="font-bold">{analysisData.confidence.toFixed(1)}%</span>
-                          </div>
-                          {modelSeverity !== null && (
-                            <div className="flex justify-between">
-                              <span>模型嚴重度</span>
-                              <span className="font-bold">{modelSeverity}%</span>
-                            </div>
-                          )}
-                        </div>
-                        
-                        <div className="flex justify-between items-center mb-3">
-                          <span>症狀嚴重程度</span>
-                          <span className="text-2xl font-bold">{prediction}%</span>
-                        </div>
-                        
-                        <div className="w-full bg-gray-300 rounded-full h-4 mb-4">
-                          <div
-                            className="bg-white h-4 rounded-full"
-                            style={{ width: `${prediction}%` }}
-                          ></div>
-                        </div>
-                        
-                        <div className="mt-4 space-y-1">
-                          <p className="font-medium">概述: {analysisData.recommendation}</p>
-                          <p>建議阻力設定: {analysisData.recommendedResistance}度</p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+              <div className="flex gap-2">
+                {!isConnected ? (
+                  <Button
+                    onClick={handleManualConnect}
+                    className="flex-1 bg-blue-600 hover:bg-blue-700"
+                  >
+                    連接設備
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={closeSerial}
+                    variant="outline"
+                    className="flex-1 border-red-500 text-red-500 hover:bg-red-500 hover:text-white"
+                  >
+                    斷開連接
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
 
-            {prediction !== null && groups.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-white">個性化訓練建議（權威類型，多樣化）</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {groups.map((g, idx) => (
-                      <div key={idx} className="bg-white/5 rounded-lg p-4">
-                        <div className="text-purple-200 font-semibold mb-2">{g.category}</div>
-                        <ul className="list-disc pl-5 space-y-1 text-white">
-                          {g.items.map((it, j) => (
-                            <li key={j}>{it}</li>
-                          ))}
-                        </ul>
+          {/* 传感器数据卡片 */}
+          <div className="bg-white dark:bg-neutral-800 rounded-xl shadow-lg p-6">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">即時傳感器數據</h2>
+            <div className="space-y-4">
+
+                <div>
+                  <h3 className="font-medium mb-3 text-gray-700 dark:text-gray-300">手指彎曲度</h3>
+                  <div className="grid grid-cols-1 gap-2">
+                    {sensorData.fingerPositions.map((value, index) => (
+                      <div key={index} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-neutral-700 rounded">
+                        <span className="text-sm text-gray-600 dark:text-gray-400">手指 {index + 1}</span>
+                        <span className="font-medium text-gray-900 dark:text-white">{value}%</span>
                       </div>
                     ))}
                   </div>
-                </CardContent>
-              </Card>
-            )}
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-white">歷史分析記錄</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-8 text-gray-300">
-                  正在開發中...
                 </div>
-              </CardContent>
-            </Card>
+
+                <div>
+                  <h3 className="font-medium mb-3 text-gray-700 dark:text-gray-300">加速度計 (g)</h3>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="text-center p-2 bg-gray-50 dark:bg-neutral-700 rounded">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">X</div>
+                      <div className="font-medium text-gray-900 dark:text-white">{sensorData.accelerometer.x.toFixed(2)}</div>
+                    </div>
+                    <div className="text-center p-2 bg-gray-50 dark:bg-neutral-700 rounded">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">Y</div>
+                      <div className="font-medium text-gray-900 dark:text-white">{sensorData.accelerometer.y.toFixed(2)}</div>
+                    </div>
+                    <div className="text-center p-2 bg-gray-50 dark:bg-neutral-700 rounded">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">Z</div>
+                      <div className="font-medium text-gray-900 dark:text-white">{sensorData.accelerometer.z.toFixed(2)}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="font-medium mb-3 text-gray-700 dark:text-gray-300">陀螺儀 (deg/s)</h3>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="text-center p-2 bg-gray-50 dark:bg-neutral-700 rounded">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">X</div>
+                      <div className="font-medium text-gray-900 dark:text-white">{sensorData.gyroscope.x.toFixed(2)}</div>
+                    </div>
+                    <div className="text-center p-2 bg-gray-50 dark:bg-neutral-700 rounded">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">Y</div>
+                      <div className="font-medium text-gray-900 dark:text-white">{sensorData.gyroscope.y.toFixed(2)}</div>
+                    </div>
+                    <div className="text-center p-2 bg-gray-50 dark:bg-neutral-700 rounded">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">Z</div>
+                      <div className="font-medium text-gray-900 dark:text-white">{sensorData.gyroscope.z.toFixed(2)}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="font-medium mb-3 text-gray-700 dark:text-gray-300">EMG 信號</h3>
+                  <div className="p-3 bg-gray-50 dark:bg-neutral-700 rounded text-center">
+                    <span className="text-lg font-bold text-gray-900 dark:text-white">
+                      {sensorData.emg?.toFixed ? sensorData.emg.toFixed(0) : sensorData.emg}
+                    </span>
+                  </div>
+                </div>
+
+                {isCollecting && (
+                  <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                      <span className="text-sm text-blue-700 dark:text-blue-300">正在採集數據 (10秒)</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+          </div>
+
+          {/* 分析控制卡片 */}
+          <div className="bg-white dark:bg-neutral-800 rounded-xl shadow-lg p-6">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">AI 分析控制</h2>
+
+            <div className="space-y-4">
+              <Button
+                onClick={startTenSecondAnalysis}
+                disabled={isLoading || !isConnected}
+                className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white py-3 px-6 rounded-lg transition-colors"
+              >
+                {isLoading ? '分析中...' :
+                 !isConnected ? '請先連接設備' :
+                 '開始症狀分析（採集10秒）'}
+              </Button>
+
+              <Button
+                onClick={testRecordSaving}
+                variant="outline"
+                className="w-full border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-neutral-600 dark:text-gray-300 dark:hover:bg-neutral-700"
+              >
+                測試記錄保存功能
+              </Button>
+
+              {isLoading && (
+                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+                    <span className="text-blue-700 dark:text-blue-300">正在進行AI分析...</span>
+                  </div>
+                </div>
+              )}
           </div>
         </div>
-      </div>
 
-      {/* 添加懸浮動態按鈕 */}
+        {/* 關閉上方網格容器 */}
+        </div>
+
+        {/* 分析结果区域 */}
+        {prediction !== null && (
+          <div className="bg-white dark:bg-neutral-800 rounded-xl shadow-lg p-6">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-6">AI 分析結果</h2>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* 基本信息 */}
+              <div className="space-y-4">
+                <div className="bg-gray-50 dark:bg-neutral-700 rounded-lg p-4">
+                  <h3 className="font-medium text-gray-700 dark:text-gray-300 mb-3">基本信息</h3>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">分析編號</span>
+                      <span className="font-semibold text-gray-900 dark:text-white">#{analysisData.analysisCount}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">置信度</span>
+                      <span className="font-semibold text-gray-900 dark:text-white">{analysisData.confidence.toFixed(1)}%</span>
+                    </div>
+                    {modelSeverity !== null && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600 dark:text-gray-400">模型嚴重度</span>
+                        <span className="font-semibold text-gray-900 dark:text-white">{modelSeverity}%</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* 症状严重程度 */}
+              <div className="space-y-4">
+                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4">
+                  <h3 className="font-medium text-blue-800 dark:text-blue-200 mb-3">症狀嚴重程度</h3>
+                  <div className="text-center mb-4">
+                    <span className="text-3xl font-bold text-blue-600 dark:text-blue-400">{prediction}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 dark:bg-neutral-600 rounded-full h-3">
+                    <div
+                      className="bg-blue-600 h-3 rounded-full transition-all duration-500"
+                    ></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 详细分析结果 */}
+            <div className="mt-6 space-y-4">
+              <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4">
+                <h3 className="font-medium text-green-800 dark:text-green-200 mb-2">AI 分析建議</h3>
+                <p className="text-green-700 dark:text-green-300">{analysisData.recommendation}</p>
+              </div>
+
+              <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4">
+                <h3 className="font-medium text-orange-800 dark:text-orange-200 mb-2">訓練參數建議</h3>
+                <p className="text-orange-700 dark:text-orange-300">
+                  建議阻力設定: <span className="font-semibold">{analysisData.recommendedResistance}度</span>
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 个性化训练建议 */}
+        {prediction !== null && groups.length > 0 && (
+          <div className="bg-white dark:bg-neutral-800 rounded-xl shadow-lg p-6">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-6">個性化訓練建議</h2>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {groups.map((g, idx) => (
+                <div key={idx} className="bg-gray-50 dark:bg-neutral-700 rounded-lg p-4">
+                  <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-3">{g.category}</h3>
+                  <ul className="space-y-2">
+                    {g.items.map((it, j) => (
+                      <li key={j} className="flex items-start gap-2 text-gray-700 dark:text-gray-300">
+                        <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0"></div>
+                        <span className="text-sm">{it}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 快速访问链接 */}
+        <div className="bg-white dark:bg-neutral-800 rounded-xl shadow-lg p-6">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">快速訪問</h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <a
+              href="/records"
+              className="flex items-center gap-3 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
+            >
+              <Book className="h-5 w-5 text-blue-600" />
+              <div>
+                <div className="font-medium text-blue-800 dark:text-blue-200">查看記錄</div>
+                <div className="text-sm text-blue-600 dark:text-blue-400">歷史分析記錄</div>
+              </div>
+            </a>
+
+            <a
+              href="/device"
+              className="flex items-center gap-3 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors"
+            >
+              <Activity className="h-5 w-5 text-green-600" />
+              <div>
+                <div className="font-medium text-green-800 dark:text-green-200">設備監控</div>
+                <div className="text-sm text-green-600 dark:text-green-400">實時數據監控</div>
+              </div>
+            </a>
+
+            <a
+              href="/settings"
+              className="flex items-center gap-3 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+            >
+              <Settings className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+              <div>
+                <div className="font-medium text-gray-800 dark:text-gray-200">系統設置</div>
+                <div className="text-sm text-gray-600 dark:text-gray-400">參數配置</div>
+              </div>
+            </a>
+          </div>
+        </div>
+        </main>
+      </div>
       <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50">
         <AnimatedDock items={dockItems} />
       </div>
-    </div>
+    </>
   );
 }

@@ -34,20 +34,26 @@ export default function HandModel({ sensorData }: { sensorData: SensorData | nul
       <div>
         <h3 className="font-medium mb-2">手指彎曲度</h3>
         <div className="space-y-3">
-          {fingerBend.map((value, index) => (
-            <div key={index} className="flex items-center">
-              <span className="w-24">手指 {index + 1}:</span>
-              <div className="flex-1 ml-2">
-                <div className="w-full bg-gray-200 rounded-full h-2.5">
-                  <div
-                    className="bg-blue-600 h-2.5 rounded-full"
-                    style={{ width: `${value}%` }}
-                  ></div>
+          {fingerBend.map((value, index) => {
+            // 將原始傳感器數據 (0-1023) 轉換為百分比 (0-100%)
+            const percentage = Math.min(100, Math.max(0, (value / 1023) * 100));
+            const displayValue = Math.round(percentage);
+
+            return (
+              <div key={index} className="flex items-center">
+                <span className="w-24">手指 {index + 1}:</span>
+                <div className="flex-1 ml-2">
+                  <div className="w-full bg-gray-200 rounded-full h-2.5">
+                    <div
+                      className="bg-blue-600 h-2.5 rounded-full transition-all duration-200"
+                      style={{ width: `${percentage}%` }}
+                    ></div>
+                  </div>
                 </div>
+                <span className="w-12 text-right text-sm">{displayValue}%</span>
               </div>
-              <span className="w-10 text-right">{value}%</span>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
       

@@ -388,13 +388,15 @@ function updateAllDisplays() {
 
 // 更新手指彎曲顯示
 function updateFingerDisplay(fingerIndex, value) {
-    // 更新數值顯示
-    fingerValueElements[fingerIndex].textContent = value;
-    
+    // 計算百分比
+    const percentage = Math.min(100, Math.max(0, (value / 1023) * 100));
+
+    // 更新數值顯示 (顯示百分比而不是原始值)
+    fingerValueElements[fingerIndex].textContent = Math.round(percentage) + '%';
+
     // 更新進度條
-    const percentage = (value / 1023) * 100;
     fingerProgressElements[fingerIndex].style.width = percentage + '%';
-    
+
     // 更新SVG手指彎曲
     updateFingerVisualization(fingerIndex, value);
 }

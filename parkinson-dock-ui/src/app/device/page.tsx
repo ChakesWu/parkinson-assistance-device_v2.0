@@ -10,6 +10,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
+import { analysisRecordService } from '@/services/analysisRecordService';
 
 // 定义传感器数据类型以匹配HandModel的期望
 interface SensorDataForDisplay {
@@ -266,7 +267,10 @@ const Dashboard = ({
               <div className="text-sm space-y-1">
                 <div>連接狀態: {sensorData ? '已連接' : '未連接'}</div>
                 {sensorData?.fingers && (
-                  <div>手指數據: [{sensorData.fingers.join(', ')}]</div>
+                  <div>
+                    <div>手指數據 (原始): [{sensorData.fingers.join(', ')}]</div>
+                    <div>手指數據 (百分比): [{sensorData.fingers.map(v => Math.round((v / 1023) * 100)).join('%, ')}%]</div>
+                  </div>
                 )}
                 {sensorData?.accel && (
                   <div>加速度計: X:{sensorData.accel.x.toFixed(3)}, Y:{sensorData.accel.y.toFixed(3)}, Z:{sensorData.accel.z.toFixed(3)}</div>

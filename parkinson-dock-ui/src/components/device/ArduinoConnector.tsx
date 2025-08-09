@@ -2,6 +2,7 @@
 
 /// &lt;reference path="../../types/web-serial.d.ts" />
 import { useState, useEffect, useRef } from 'react';
+import { analysisRecordService } from '@/services/analysisRecordService';
 
 interface SensorData {
   fingers: number[];
@@ -28,6 +29,17 @@ export default function ArduinoConnector({ onDataReceived }: ArduinoConnectorPro
   const writableClosedRef = useRef<Promise<void> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const readBufferRef = useRef<string>('');
+
+  // AI分析结果状态
+  const [aiAnalysisData, setAiAnalysisData] = useState({
+    analysisCount: 0,
+    parkinsonLevel: 0,
+    parkinsonDescription: '',
+    confidence: 0,
+    recommendation: '',
+    recommendedResistance: 0,
+    isAnalyzing: false
+  });
 
   // 檢查瀏覽器是否支持Web Serial API
   const isWebSerialSupported = () => {
@@ -303,6 +315,69 @@ export default function ArduinoConnector({ onDataReceived }: ArduinoConnectorPro
             onDataReceived?.({ mag: newMag });
           }
         }
+
+        // 解析AI分析结果
+        else if (trimmedLine.includes('=== AI分析結果 ===')) {
+          setAiAnalysisData(prev => ({ ...prev, isAnalyzing: true }));
+        }
+        else if (trimmedLine.startsWith('分析次數:')) {
+          const countMatch = trimmedLine.match(/分析次數:\s*(\d+)/);
+          if (countMatch) {
+            setAiAnalysisData(prev => ({ ...prev, analysisCount: parseInt(countMatch[1]) }));
+          }
+        }
+        else if (trimmedLine.startsWith('帕金森等級:')) {
+          const levelMatch = trimmedLine.match(/帕金森等級:\s*(\d+)\s*\(([^)]+)\)/);
+          if (levelMatch) {
+            setAiAnalysisData(prev => ({
+              ...prev,
+              parkinsonLevel: parseInt(levelMatch[1]),
+              parkinsonDescription: levelMatch[2]
+            }));
+          }
+        }
+        else if (trimmedLine.startsWith('置信度:')) {
+          const confidenceMatch = trimmedLine.match(/置信度:\s*([\d.]+)%/);
+          if (confidenceMatch) {
+            setAiAnalysisData(prev => ({ ...prev, confidence: parseFloat(confidenceMatch[1]) }));
+          }
+        }
+        else if (trimmedLine.startsWith('訓練建議:')) {
+          const recommendation = trimmedLine.split(':')[1]?.trim();
+          if (recommendation) {
+            setAiAnalysisData(prev => ({ ...prev, recommendation }));
+          }
+        }
+        else if (trimmedLine.startsWith('建議阻力設定:')) {
+          const resistanceMatch = trimmedLine.match(/建議阻力設定:\s*(\d+)度/);
+          if (resistanceMatch) {
+            setAiAnalysisData(prev => ({ ...prev, recommendedResistance: parseInt(resistanceMatch[1]) }));
+          }
+        }
+        else if (trimmedLine.includes('==================') && aiAnalysisData.isAnalyzing) {
+          // AI分析完成，保存记录
+          try {
+            const record = analysisRecordService.saveRecord({
+              analysisCount: aiAnalysisData.analysisCount,
+              parkinsonLevel: aiAnalysisData.parkinsonLevel,
+              parkinsonDescription: aiAnalysisData.parkinsonDescription,
+              confidence: aiAnalysisData.confidence,
+              recommendation: aiAnalysisData.recommendation,
+              recommendedResistance: aiAnalysisData.recommendedResistance,
+              sensorData: {
+                fingerPositions: sensorData.fingers.map(v => Math.round((v / 1023) * 100)),
+                accelerometer: sensorData.accel,
+                gyroscope: sensorData.gyro,
+                emg: 0, // EMG数据如果有的话
+              },
+              source: 'arduino',
+            });
+            console.log('Arduino AI分析记录已保存:', record);
+            setAiAnalysisData(prev => ({ ...prev, isAnalyzing: false }));
+          } catch (error) {
+            console.error('保存Arduino AI分析记录失败:', error);
+          }
+        }
       }
     } catch (err) {
       console.error('數據解析錯誤:', err);
@@ -393,20 +468,26 @@ export default function ArduinoConnector({ onDataReceived }: ArduinoConnectorPro
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-gray-100 dark:bg-neutral-700 p-4 rounded-lg">
               <h4 className="font-medium mb-2">手指彎曲度</h4>
-              {sensorData.fingers.map((value, index) => (
-                <div key={index} className="flex items-center mb-2">
-                  <span className="w-16">手指 {index + 1}:</span>
-                  <div className="flex-1 ml-2">
-                    <div className="w-full bg-gray-300 dark:bg-neutral-600 rounded-full h-2.5">
-                      <div 
-                        className="bg-blue-600 dark:bg-blue-400 h-2.5 rounded-full" 
-                        style={{ width: `${value}%` }}
-                      ></div>
+              {sensorData.fingers.map((value, index) => {
+                // 將原始傳感器數據 (0-1023) 轉換為百分比 (0-100%)
+                const percentage = Math.min(100, Math.max(0, (value / 1023) * 100));
+                const displayValue = Math.round(percentage);
+
+                return (
+                  <div key={index} className="flex items-center mb-2">
+                    <span className="w-16">手指 {index + 1}:</span>
+                    <div className="flex-1 ml-2">
+                      <div className="w-full bg-gray-300 dark:bg-neutral-600 rounded-full h-2.5">
+                        <div
+                          className="bg-blue-600 dark:bg-blue-400 h-2.5 rounded-full transition-all duration-200"
+                          style={{ width: `${percentage}%` }}
+                        ></div>
+                      </div>
                     </div>
+                    <span className="w-12 text-right text-sm">{displayValue}%</span>
                   </div>
-                  <span className="w-10 text-right">{value}%</span>
-                </div>
-              ))}
+                );
+              })}
             </div>
             
             <div className="bg-gray-100 dark:bg-neutral-700 p-4 rounded-lg">
@@ -427,6 +508,58 @@ export default function ArduinoConnector({ onDataReceived }: ArduinoConnectorPro
               </div>
             </div>
           </div>
+
+          {/* AI分析状态显示 */}
+          {(aiAnalysisData.analysisCount > 0 || aiAnalysisData.isAnalyzing) && (
+            <div className="mt-6">
+              <h3 className="text-lg font-semibold mb-4">AI分析結果</h3>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-gray-100 dark:bg-neutral-700 p-4 rounded-lg">
+                  <h4 className="font-medium mb-2">分析狀態</h4>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span>分析次數:</span>
+                      <span className="font-medium">{aiAnalysisData.analysisCount}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>狀態:</span>
+                      <span className={`font-medium ${aiAnalysisData.isAnalyzing ? 'text-blue-600' : 'text-green-600'}`}>
+                        {aiAnalysisData.isAnalyzing ? '分析中...' : '已完成'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {aiAnalysisData.parkinsonLevel > 0 && (
+                  <div className="bg-gray-100 dark:bg-neutral-700 p-4 rounded-lg">
+                    <h4 className="font-medium mb-2">分析結果</h4>
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <span>等級:</span>
+                        <span className="font-medium">{aiAnalysisData.parkinsonLevel} ({aiAnalysisData.parkinsonDescription})</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>置信度:</span>
+                        <span className="font-medium">{aiAnalysisData.confidence.toFixed(1)}%</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>建議阻力:</span>
+                        <span className="font-medium">{aiAnalysisData.recommendedResistance}度</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {aiAnalysisData.recommendation && (
+                <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                  <h4 className="font-medium mb-2 text-blue-800 dark:text-blue-200">訓練建議</h4>
+                  <p className="text-blue-700 dark:text-blue-300">{aiAnalysisData.recommendation}</p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
