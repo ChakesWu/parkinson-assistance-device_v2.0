@@ -20,7 +20,7 @@
 
 // 通信協議參數
 const unsigned long SAMPLE_RATE = 100;  // 採樣間隔(ms)
-const unsigned long BASELINE_DURATION = 2000;  // 基準校準時長(ms)
+const unsigned long BASELINE_DURATION = 3000;  // 基準校準時長(ms) - 改為3秒
 
 // 全局變數
 Servo rehabServo;
@@ -28,6 +28,11 @@ float imuData[3] = {0};  // x, y, z加速度
 bool deviceConnected = false;
 bool trainingMode = false;
 int parkinsonLevel = 0;
+
+// 初始化和基線相關變數
+bool isInitialized = false;
+float fingerBaseline[5] = {0};  // 手指伸直時的基線值
+float emgBaseline = 0;
 
 // 設備檢測
 bool isPotentiometerConnected() {
@@ -81,7 +86,8 @@ void setup() {
     pinMode(PIN_EMG_DETECT, INPUT_PULLUP);  // 改為上拉輸入
     
     Serial.println("SYSTEM: 帕金森輔助裝置已啟動");
-    Serial.println("SYSTEM: 支持命令: START, TRAIN, LEVEL, SERVO");
+    Serial.println("SYSTEM: 支持命令: START, TRAIN, LEVEL, SERVO, INIT");
+    Serial.println("SYSTEM: 請先執行 INIT 命令進行初始化校準");
 }
 
 void loop() {
@@ -89,7 +95,13 @@ void loop() {
         String cmd = Serial.readStringUntil('\n');
         cmd.trim();
         
-        if (cmd == "START") {
+        if (cmd == "INIT") {
+            initializeDevice();
+        } else if (cmd == "START") {
+            if (!isInitialized) {
+                Serial.println("ERROR: 請先執行 INIT 命令進行初始化");
+                return;
+            }
             startDataCollection();
         } else if (cmd == "TRAIN") {
             startTrainingMode();
@@ -107,6 +119,73 @@ void loop() {
     }
     
     delay(10);
+}
+
+void initializeDevice() {
+    Serial.println("INIT: 開始設備初始化");
+    Serial.println("INIT: 請確保手指完全伸直，保持3秒不動");
+
+    // 檢測設備連接狀態
+    bool potConnected = isPotentiometerConnected();
+    bool emgConnected = isEMGConnected();
+
+    Serial.print("DEVICE: 電位器=");
+    Serial.print(potConnected ? "已連接" : "模擬模式");
+    Serial.print(", EMG=");
+    Serial.println(emgConnected ? "已連接" : "模擬模式");
+
+    // 重置基線值
+    for (int i = 0; i < 5; i++) {
+        fingerBaseline[i] = 0;
+    }
+    emgBaseline = 0;
+
+    // 3秒倒計時
+    for (int countdown = 3; countdown > 0; countdown--) {
+        Serial.print("INIT: 倒計時 ");
+        Serial.print(countdown);
+        Serial.println(" 秒...");
+        delay(1000);
+    }
+
+    Serial.println("INIT: 開始收集手指伸直基線數據...");
+
+    unsigned long startTime = millis();
+    int sampleCount = 0;
+
+    // 收集3秒的基線數據
+    while (millis() - startTime < BASELINE_DURATION) {
+        // 收集手指數據 (伸直狀態)
+        fingerBaseline[0] += potConnected ? analogRead(PIN_PINKY) : getSimulatedPotValue(PIN_PINKY);
+        fingerBaseline[1] += potConnected ? analogRead(PIN_RING) : getSimulatedPotValue(PIN_RING);
+        fingerBaseline[2] += potConnected ? analogRead(PIN_MIDDLE) : getSimulatedPotValue(PIN_MIDDLE);
+        fingerBaseline[3] += potConnected ? analogRead(PIN_INDEX) : getSimulatedPotValue(PIN_INDEX);
+        fingerBaseline[4] += potConnected ? analogRead(PIN_THUMB) : getSimulatedPotValue(PIN_THUMB);
+
+        // 收集EMG基線數據
+        emgBaseline += emgConnected ? analogRead(PIN_EMG) : getSimulatedEMGValue();
+
+        sampleCount++;
+        delay(SAMPLE_RATE);
+    }
+
+    // 計算平均基線值
+    for (int i = 0; i < 5; i++) {
+        fingerBaseline[i] /= sampleCount;
+    }
+    emgBaseline /= sampleCount;
+
+    isInitialized = true;
+
+    Serial.println("INIT: 初始化完成！");
+    Serial.println("BASELINE: 手指伸直基線值:");
+    Serial.print("  拇指="); Serial.println(fingerBaseline[4]);
+    Serial.print("  食指="); Serial.println(fingerBaseline[3]);
+    Serial.print("  中指="); Serial.println(fingerBaseline[2]);
+    Serial.print("  無名指="); Serial.println(fingerBaseline[1]);
+    Serial.print("  小指="); Serial.println(fingerBaseline[0]);
+    Serial.print("  EMG="); Serial.println(emgBaseline);
+    Serial.println("INIT: 現在可以使用 START 命令開始數據收集");
 }
 
 void startDataCollection() {

@@ -37,22 +37,22 @@ void loop()
   IMU.readGyroscope(gyroX, gyroY, gyroZ);
   IMU.readMagneticField(magX, magY, magZ);
   
-  // 模擬電位器數據 (0-1023)
+  // 模擬電位器數據 (0-1023) - 左手邏輯
   // 這裡用 analogRead 讀取真實的電位器，如果沒有連接就用模擬值
-  finger1 = analogRead(A0);  // 拇指
-  finger2 = analogRead(A1);  // 食指  
-  finger3 = analogRead(A2);  // 中指
-  finger4 = analogRead(A3);  // 無名指
-  finger5 = analogRead(A4);  // 小指
+  finger1 = analogRead(A4);  // 拇指 (左手finger1)
+  finger2 = analogRead(A3);  // 食指 (左手finger2)
+  finger3 = analogRead(A2);  // 中指 (左手finger3)
+  finger4 = analogRead(A1);  // 無名指 (左手finger4)
+  finger5 = analogRead(A0);  // 小指 (左手finger5)
   
-  // 如果沒有連接電位器，使用模擬值
+  // 如果沒有連接電位器，使用模擬值 (左手邏輯)
   if (finger1 == 0 && finger2 == 0 && finger3 == 0 && finger4 == 0 && finger5 == 0) {
-    // 模擬手指彎曲數據
-    finger1 = random(100, 900);  // 拇指
-    finger2 = random(200, 800);  // 食指
-    finger3 = random(150, 850);  // 中指
-    finger4 = random(180, 820);  // 無名指
-    finger5 = random(120, 880);  // 小指
+    // 模擬手指彎曲數據 - 左手順序
+    finger1 = random(100, 900);  // 拇指 (左手finger1)
+    finger2 = random(200, 800);  // 食指 (左手finger2)
+    finger3 = random(150, 850);  // 中指 (左手finger3)
+    finger4 = random(180, 820);  // 無名指 (左手finger4)
+    finger5 = random(120, 880);  // 小指 (左手finger5)
   }
   
   // 創建 JSON 格式的數據

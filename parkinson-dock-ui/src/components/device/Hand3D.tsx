@@ -189,9 +189,18 @@ class Hand3D {
                     }
                 });
                 
-                // 設置模型大小和位置
+                // 設置模型大小和位置 (左手顯示)
                 this.handModel.scale.set(2, 2, 2);
                 this.handModel.position.set(0, -1, 0);
+
+                // 設置手部初始旋轉，確保手掌和手指在同一水平面
+                this.handModel.rotation.x = 0;
+                this.handModel.rotation.y = 0;
+                this.handModel.rotation.z = 0;
+
+                // 確保顯示為左手 (如果模型原本是右手，需要鏡像)
+                // 注意：如果GLB模型已經是左手，則不需要鏡像
+                // this.handModel.scale.x = -2; // 取消註釋以鏡像X軸
                 
                 // 如果有動畫，設置動畫混合器
                 if (gltf.animations && gltf.animations.length > 0) {
@@ -217,17 +226,17 @@ class Hand3D {
     collectBones() {
         if (!this.handModel) return;
         
-        // 根據實際的骨骼名稱收集手指骨骼
+        // 根據實際的骨骼名稱收集手指骨骼 (左手邏輯：拇指到小指)
         const fingerBonePatterns = [
-            // 拇指 (左手)
+            // finger1: 拇指 (左手)
             ['thumb.01.L', 'thumb.02.L', 'thumb.03.L'],
-            // 食指 (左手)
+            // finger2: 食指 (左手)
             ['finger_index.01.L', 'finger_index.02.L', 'finger_index.03.L'],
-            // 中指 (左手)
+            // finger3: 中指 (左手)
             ['finger_middle.01.L', 'finger_middle.02.L', 'finger_middle.03.L'],
-            // 無名指 (左手)
+            // finger4: 無名指 (左手)
             ['finger_ring.01.L', 'finger_ring.02.L', 'finger_ring.03.L'],
-            // 小指 (左手)
+            // finger5: 小指 (左手)
             ['finger_pinky.01.L', 'finger_pinky.02.L', 'finger_pinky.03.L']
         ];
         
@@ -304,12 +313,13 @@ class Hand3D {
     }
     
     createFingers() {
+        // 左手手指配置 (finger1=拇指, finger2=食指, finger3=中指, finger4=無名指, finger5=小指)
         const fingerConfigs = [
-            { name: 'thumb', position: [-1.4, 0.3, 0.8], rotation: [0, 0, -0.4], scale: [0.9, 0.9, 0.8] },
-            { name: 'index', position: [-0.7, 0.3, 2.0], rotation: [0, 0, 0], scale: [1, 1, 1] },
-            { name: 'middle', position: [0, 0.3, 2.1], rotation: [0, 0, 0], scale: [1, 1, 1.1] },
-            { name: 'ring', position: [0.7, 0.3, 2.0], rotation: [0, 0, 0], scale: [1, 1, 0.95] },
-            { name: 'pinky', position: [1.3, 0.3, 1.6], rotation: [0, 0, 0.1], scale: [0.8, 0.8, 0.8] }
+            { name: 'thumb', position: [1.4, 0.3, 0.8], rotation: [0, 0, 0.4], scale: [0.9, 0.9, 0.8] },    // finger1: 拇指 (左手位置)
+            { name: 'index', position: [0.7, 0.3, 2.0], rotation: [0, 0, 0], scale: [1, 1, 1] },            // finger2: 食指
+            { name: 'middle', position: [0, 0.3, 2.1], rotation: [0, 0, 0], scale: [1, 1, 1.1] },           // finger3: 中指
+            { name: 'ring', position: [-0.7, 0.3, 2.0], rotation: [0, 0, 0], scale: [1, 1, 0.95] },         // finger4: 無名指
+            { name: 'pinky', position: [-1.3, 0.3, 1.6], rotation: [0, 0, -0.1], scale: [0.8, 0.8, 0.8] }  // finger5: 小指
         ];
         
         fingerConfigs.forEach((config, index) => {
@@ -401,8 +411,12 @@ class Hand3D {
     
     updateFingerBending(fingerIndex: number, value: number) {
         if (fingerIndex < 0 || fingerIndex >= 5) return;
-        
-        const bendAngle = (value / 1023) * Math.PI / 2; // 0-90度轉換為弧度
+
+        // 現在value是弯曲度值（0=伸直，正值=彎曲）
+        // 將弯曲度值映射到角度，假設最大弯曲度為300對應90度
+        const maxBendValue = 300;
+        const normalizedValue = Math.max(0, Math.min(value / maxBendValue, 1));
+        const bendAngle = normalizedValue * Math.PI / 2; // 0-90度轉換為弧度
         
         // 如果有rigged模型的骨骼
         if (this.bones[fingerIndex] && Array.isArray(this.bones[fingerIndex])) {
@@ -423,9 +437,10 @@ class Hand3D {
             // @ts-ignore
             if (finger && finger.joints) {
                 // @ts-ignore
+                // 修改：使用正角度，讓手指在水平面上彎曲
                 finger.joints.forEach((joint, jointIndex) => {
                     const jointBend = bendAngle * (jointIndex + 1) / (finger as any).joints.length;
-                    joint.rotation.x = -jointBend;
+                    joint.rotation.x = jointBend; // 改為正角度，水平面彎曲
                 });
             }
         }

@@ -98,7 +98,12 @@ class SimpleHand3D {
     
     createSimpleHandModel() {
         this.handGroup = new THREE.Group();
-        
+
+        // 設置手部初始旋轉，確保手掌和手指在同一水平面
+        this.handGroup.rotation.x = 0;
+        this.handGroup.rotation.y = 0;
+        this.handGroup.rotation.z = 0;
+
         // 创建手掌
         this.createPalm();
         
@@ -112,7 +117,7 @@ class SimpleHand3D {
     }
     
     createPalm() {
-        // 主手掌 - 圆角方形
+        // 主手掌 - 圆角方形 (左手布局)
         const palmGeometry = new THREE.BoxGeometry(3, 0.8, 4);
         const palmMaterial = new THREE.MeshPhysicalMaterial({
             color: 0x6b7280, // 中灰色，更清晰可见
@@ -160,12 +165,13 @@ class SimpleHand3D {
     }
     
     createFingers() {
+        // 左手手指配置 (finger1=拇指, finger2=食指, finger3=中指, finger4=無名指, finger5=小指)
         const fingerConfigs = [
-            { name: 'thumb', position: [-1.8, 0.4, 1.2], scale: 0.8, joints: 3 },
-            { name: 'index', position: [-0.9, 0.4, 2.2], scale: 1.0, joints: 3 },
-            { name: 'middle', position: [0, 0.4, 2.3], scale: 1.1, joints: 3 },
-            { name: 'ring', position: [0.9, 0.4, 2.2], scale: 0.95, joints: 3 },
-            { name: 'pinky', position: [1.7, 0.4, 1.8], scale: 0.75, joints: 3 }
+            { name: 'thumb', position: [1.8, 0.4, 1.2], scale: 0.8, joints: 3 },   // finger1: 拇指 (左手位置)
+            { name: 'index', position: [0.9, 0.4, 2.2], scale: 1.0, joints: 3 },   // finger2: 食指
+            { name: 'middle', position: [0, 0.4, 2.3], scale: 1.1, joints: 3 },    // finger3: 中指
+            { name: 'ring', position: [-0.9, 0.4, 2.2], scale: 0.95, joints: 3 },  // finger4: 無名指
+            { name: 'pinky', position: [-1.7, 0.4, 1.8], scale: 0.75, joints: 3 }  // finger5: 小指
         ];
         
         fingerConfigs.forEach((config, index) => {
@@ -308,17 +314,21 @@ class SimpleHand3D {
     updateFingerBending(fingerIndex, value) {
         if (fingerIndex < 0 || fingerIndex >= 5) return;
         if (!this.fingerGroups[fingerIndex]) return;
-        
-        const bendAngle = (value / 1023) * Math.PI / 2; // 0-90度
+
+        // 現在value是弯曲度值（0=伸直，正值=彎曲）
+        const maxBendValue = 300; // 假設最大弯曲度為300
+        const normalizedValue = Math.max(0, Math.min(value / maxBendValue, 1));
+        const bendAngle = normalizedValue * Math.PI / 2; // 0-90度
         const finger = this.fingerGroups[fingerIndex];
-        
+
         if (finger.joints && finger.joints.length > 0) {
+            // 修改：使用正角度，讓手指在水平面上彎曲
             finger.joints.forEach((joint, jointIndex) => {
                 const jointBend = bendAngle * (jointIndex + 1) / finger.joints.length;
-                joint.rotation.x = -jointBend;
+                joint.rotation.x = jointBend; // 改為正角度，水平面彎曲
             });
         }
-        
+
         this.fingerData[fingerIndex] = value;
     }
     

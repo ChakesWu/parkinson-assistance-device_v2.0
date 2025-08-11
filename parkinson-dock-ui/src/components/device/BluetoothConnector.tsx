@@ -19,7 +19,15 @@ export default function BluetoothConnector({ onDataReceived }: BluetoothConnecto
   });
   const [error, setError] = useState<string | null>(null);
   const [deviceName, setDeviceName] = useState<string | null>(null);
-  
+
+  // 初始化相关状态
+  const [isInitializing, setIsInitializing] = useState(false);
+  const [initializationComplete, setInitializationComplete] = useState(false);
+  const [fingerBaselines, setFingerBaselines] = useState<number[]>([0, 0, 0, 0, 0]);
+
+  // 電位器方向設置
+  const [potentiometerReversed, setPotentiometerReversed] = useState(false);
+
   const bluetoothManagerRef = useRef<BluetoothManager | null>(null);
 
   // AI分析结果状态
@@ -56,9 +64,12 @@ export default function BluetoothConnector({ onDataReceived }: BluetoothConnecto
 
   // 处理数据接收
   const handleDataReceived = (data: SensorData) => {
-    setSensorData(data);
-    onDataReceived?.(data);
-    console.log('蓝牙数据接收:', data);
+    // 调整手指方向
+    const processedData = adjustFingerDirection(data);
+
+    setSensorData(processedData);
+    onDataReceived?.(processedData);
+    console.log('蓝牙数据接收:', processedData);
   };
 
   // 处理AI结果
@@ -82,13 +93,30 @@ export default function BluetoothConnector({ onDataReceived }: BluetoothConnecto
   const handleConnectionStatusChanged = (connected: boolean, type: string) => {
     setIsConnected(connected);
     setIsConnecting(false);
-    
+
     if (connected) {
       const status = bluetoothManagerRef.current?.getConnectionStatus();
       setDeviceName(status?.deviceName || null);
       setError(null);
+
+      // 蓝牙重连后重置初始化状态并开始新的初始化
+      console.log('🔄 蓝牙设备已连接，开始重新初始化...');
+      console.log('📋 请确保手指完全伸直，准备进行基线校准');
+
+      setIsInitializing(false);
+      setInitializationComplete(false);
+      setFingerBaselines([0, 0, 0, 0, 0]);
+
+      // 延迟开始初始化，确保连接稳定
+      setTimeout(() => {
+        startWebInitialization();
+      }, 1000);
+
     } else {
       setDeviceName(null);
+      setIsInitializing(false);
+      setInitializationComplete(false);
+      setFingerBaselines([0, 0, 0, 0, 0]);
       setSensorData({
         fingers: [0, 0, 0, 0, 0],
         accel: { x: 0, y: 0, z: 0 },
@@ -164,6 +192,100 @@ export default function BluetoothConnector({ onDataReceived }: BluetoothConnecto
     return Math.round(30 + (level - 1) * 30); // 30-150度范围
   };
 
+  // 網頁端初始化函數
+  const startWebInitialization = () => {
+    console.log('🔄 开始蓝牙端手指基线初始化...');
+    console.log('📋 请保持手指完全伸直，3秒后开始收集基线数据');
+
+    setIsInitializing(true);
+    setInitializationComplete(false);
+
+    // 3秒倒计时
+    let countdown = 3;
+    const countdownInterval = setInterval(() => {
+      console.log(`⏰ 倒计时: ${countdown} 秒...`);
+      countdown--;
+      if (countdown < 0) {
+        clearInterval(countdownInterval);
+        collectBaseline();
+      }
+    }, 1000);
+  };
+
+  // 收集基线数据
+  const collectBaseline = () => {
+    console.log('📊 开始收集手指伸直基线数据...');
+
+    const baselineData: number[][] = [[], [], [], [], []]; // 5个手指的数据收集
+    const sampleCount = 30; // 收集30个样本（约3秒）
+    let currentSample = 0;
+
+    const collectInterval = setInterval(() => {
+      if (sensorData && currentSample < sampleCount) {
+        // 收集当前的原始数据作为基线
+        sensorData.fingers.forEach((value, index) => {
+          baselineData[index].push(value);
+        });
+
+        currentSample++;
+        console.log(`📈 收集进度: ${currentSample}/${sampleCount}`);
+
+      } else if (currentSample >= sampleCount) {
+        clearInterval(collectInterval);
+
+        // 计算平均基线值
+        const newBaselines = baselineData.map(fingerData => {
+          const sum = fingerData.reduce((a, b) => a + b, 0);
+          return sum / fingerData.length;
+        });
+
+        setFingerBaselines(newBaselines);
+        setIsInitializing(false);
+        setInitializationComplete(true);
+
+        console.log('✅ 蓝牙端初始化完成！');
+        console.log('📊 手指伸直基线值:', newBaselines);
+        console.log('🎯 3D模型已重置为伸直状态');
+        console.log('👆 现在可以开始手指弯曲检测');
+
+        // 通知3D模型重置为伸直状态
+        onDataReceived?.({
+          fingers: [0, 0, 0, 0, 0], // 重置为伸直状态
+          accel: { x: 0, y: 0, z: 0 },
+          gyro: { x: 0, y: 0, z: 0 },
+          mag: { x: 0, y: 0, z: 0 }
+        });
+      }
+    }, 100); // 每100ms收集一次
+  };
+
+  // 调整手指方向 - 直接反轉數據
+  const adjustFingerDirection = (data: SensorData): SensorData => {
+    const adjustedFingers = data.fingers.map((value, index) => {
+      let adjustedValue = value;
+
+      // 如果設置為反向電位器，將彎曲度反轉
+      if (potentiometerReversed) {
+        // 假設正常情況下，彎曲度範圍是0-200
+        // 反轉公式：新值 = 最大值 - 原值
+        const maxValue = 200;
+        adjustedValue = Math.max(0, maxValue - value);
+      }
+
+      // 小拇指敏感度增强 (index 4 是小拇指)
+      if (index === 4) {
+        return adjustedValue * 1.5; // 增加50%敏感度
+      }
+
+      return adjustedValue;
+    });
+
+    return {
+      ...data,
+      fingers: adjustedFingers
+    };
+  };
+
   return (
     <div className="bg-white dark:bg-neutral-800 rounded-xl p-6 shadow-lg max-w-2xl mx-auto">
       <div className="flex flex-col items-center mb-6">
@@ -223,6 +345,34 @@ export default function BluetoothConnector({ onDataReceived }: BluetoothConnecto
         >
           开始数据采集
         </button>
+      </div>
+
+      {/* 電位器方向設置 */}
+      <div className="mt-4 p-4 bg-gray-50 dark:bg-neutral-700 rounded-lg">
+        <h3 className="text-sm font-medium mb-2">電位器設置</h3>
+        <div className="flex items-center space-x-3">
+          <label className="flex items-center cursor-pointer">
+            <input
+              type="checkbox"
+              checked={potentiometerReversed}
+              onChange={(e) => setPotentiometerReversed(e.target.checked)}
+              className="sr-only"
+            />
+            <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              potentiometerReversed ? 'bg-blue-600' : 'bg-gray-300'
+            }`}>
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                potentiometerReversed ? 'translate-x-6' : 'translate-x-1'
+              }`} />
+            </div>
+            <span className="ml-3 text-sm">
+              反向電位器 {potentiometerReversed ? '(減少=彎曲)' : '(增加=彎曲)'}
+            </span>
+          </label>
+        </div>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          如果手指彎曲方向相反，請開啟此選項
+        </p>
       </div>
 
       {/* 控制命令按钮 */}

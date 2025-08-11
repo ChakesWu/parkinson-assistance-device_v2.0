@@ -7,9 +7,9 @@ let dataPollingInterval = null;
 let connectionMode = 'serial'; // 'serial' 或 'bluetooth'
 let currentConnectionType = null; // 当前连接类型
 
-// 感測器數據儲存
+// 感測器數據儲存 (左手邏輯：finger[0]=拇指, finger[1]=食指, finger[2]=中指, finger[3]=無名指, finger[4]=小指)
 let sensorData = {
-    fingers: [0, 0, 0, 0, 0],
+    fingers: [0, 0, 0, 0, 0],  // [拇指, 食指, 中指, 無名指, 小指]
     accelerometer: { x: 0, y: 0, z: 0 },
     gyroscope: { x: 0, y: 0, z: 0 },
     magnetometer: { x: 0, y: 0, z: 0 }

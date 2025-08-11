@@ -43,7 +43,7 @@ const testimonials = [
     text: "這個系統讓我們能夠24小時關注媽媽的狀況，即使我們不在身邊也能安心。科技真的改變了我們的生活。",
     image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&h=150&fit=crop&crop=face",
     name: "Nanse Brown",
-    role: "患者女兒",
+    role: "患者女兒 ",
   },
   {
     text: "我希望能重新拿起針線，為家人縫製衣服。每一次的訓練都讓我感到手指更加靈活，我相信這個夢想會實現。",

@@ -715,7 +715,13 @@ bool isPotentiometerConnected() {
     // 更準確的電位器設備檢測
     // 如果檢測引腳為LOW（接地），表示設備已連接
     // 如果檢測引腳為HIGH（上拉），表示設備未連接
-    return digitalRead(PIN_POT_DETECT) == LOW;
+
+    // 臨時修改：強制返回true以使用真實電位器數據
+    // 注意：如果您已經連接了檢測引脚到GND，請移除此行
+    return true;  // 強制使用真實數據
+
+    // 原始檢測邏輯（當硬體檢測引腳正確連接時使用）
+    // return digitalRead(PIN_POT_DETECT) == LOW;
 }
 
 bool isEMGConnected() {
@@ -832,12 +838,12 @@ void sendContinuousWebData() {
 }
 
 void readRawSensorDataForWeb(float* data) {
-    // 讀取原始傳感器數據供網頁使用（不進行標準化）
-    data[0] = readFingerValue(PIN_PINKY);    // 小指
-    data[1] = readFingerValue(PIN_RING);     // 無名指
-    data[2] = readFingerValue(PIN_MIDDLE);   // 中指
-    data[3] = readFingerValue(PIN_INDEX);    // 食指
-    data[4] = readFingerValue(PIN_THUMB);    // 拇指
+    // 讀取原始傳感器數據供網頁使用（左手邏輯：拇指到小指）
+    data[0] = readFingerValue(PIN_THUMB);    // 拇指 (左手finger1)
+    data[1] = readFingerValue(PIN_INDEX);    // 食指 (左手finger2)
+    data[2] = readFingerValue(PIN_MIDDLE);   // 中指 (左手finger3)
+    data[3] = readFingerValue(PIN_RING);     // 無名指 (左手finger4)
+    data[4] = readFingerValue(PIN_PINKY);    // 小指 (左手finger5)
     data[5] = readEMGValue();                // EMG
     
     // 讀取完整IMU數據
@@ -875,7 +881,8 @@ void readRawSensorDataForWeb(float* data) {
 }
 
 void sendRawDataToWeb(float* rawData) {
-    // 發送完整數據給網頁，格式: DATA,finger1,finger2,finger3,finger4,finger5,emg,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,mag_x,mag_y,mag_z
+    // 發送完整數據給網頁，格式: DATA,thumb,index,middle,ring,pinky,emg,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,mag_x,mag_y,mag_z
+    // 左手邏輯：finger1=拇指, finger2=食指, finger3=中指, finger4=無名指, finger5=小指
     Serial.print("DATA");
     
     // 手指數據 (原始電位器數值 0-1023)

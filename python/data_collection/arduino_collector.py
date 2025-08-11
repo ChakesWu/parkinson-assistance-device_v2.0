@@ -65,16 +65,17 @@ class ArduinoDataCollector:
         return None
     
     def parse_data_packet(self, line):
-        """解析數據包"""
+        """解析數據包 (左手邏輯)"""
         if line.startswith("DATA"):
             try:
-                # 數據格式: DATA,finger1,finger2,finger3,finger4,finger5,emg,imu_x,imu_y,imu_z
+                # 數據格式: DATA,thumb,index,middle,ring,pinky,emg,imu_x,imu_y,imu_z
+                # 左手邏輯：finger1=拇指, finger2=食指, finger3=中指, finger4=無名指, finger5=小指
                 parts = line.split(',')
                 if len(parts) == 10:  # DATA + 9個數值
                     data = {
                         'timestamp': time.time(),
-                        'fingers': [float(parts[1]), float(parts[2]), float(parts[3]), 
-                                   float(parts[4]), float(parts[5])],
+                        'fingers': [float(parts[1]), float(parts[2]), float(parts[3]),
+                                   float(parts[4]), float(parts[5])],  # [拇指, 食指, 中指, 無名指, 小指]
                         'emg': float(parts[6]),
                         'imu': [float(parts[7]), float(parts[8]), float(parts[9])]
                     }
@@ -147,13 +148,14 @@ class ArduinoDataCollector:
         
         rows = []
         for point in data_points:
+            # 左手邏輯：fingers[0]=拇指, fingers[1]=食指, fingers[2]=中指, fingers[3]=無名指, fingers[4]=小指
             row = {
                 'timestamp': point['timestamp'],
-                'finger_pinky': point['fingers'][0],
-                'finger_ring': point['fingers'][1],
-                'finger_middle': point['fingers'][2],
-                'finger_index': point['fingers'][3],
-                'finger_thumb': point['fingers'][4],
+                'finger_thumb': point['fingers'][0],    # 拇指 (finger1)
+                'finger_index': point['fingers'][1],    # 食指 (finger2)
+                'finger_middle': point['fingers'][2],   # 中指 (finger3)
+                'finger_ring': point['fingers'][3],     # 無名指 (finger4)
+                'finger_pinky': point['fingers'][4],    # 小指 (finger5)
                 'emg': point['emg'],
                 'imu_x': point['imu'][0],
                 'imu_y': point['imu'][1],

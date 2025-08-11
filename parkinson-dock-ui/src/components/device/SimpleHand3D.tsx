@@ -121,6 +121,25 @@ export default function SimpleHand3D({ sensorData }: { sensorData: SensorData | 
     };
   }, []);
 
+  // 初始化時設置手指為伸直狀態，手掌和手指在同一水平面
+  useEffect(() => {
+    if (handGroupRef.current && fingerGroupsRef.current.length === 5) {
+      console.log('🎯 初始化3D手部模型為伸直狀態');
+
+      // 調整手部整體旋轉，使手掌和手指在同一水平面
+      handGroupRef.current.rotation.x = 0; // 重置X軸旋轉
+      handGroupRef.current.rotation.y = 0; // 重置Y軸旋轉
+      handGroupRef.current.rotation.z = 0; // 重置Z軸旋轉
+
+      // 設置所有手指為伸直狀態（弯曲度為0）
+      for (let i = 0; i < 5; i++) {
+        updateFingerBending(i, 0);
+      }
+
+      console.log('🎯 手掌和手指已設置為同一水平面');
+    }
+  }, [handGroupRef.current, fingerGroupsRef.current]);
+
   useEffect(() => {
     console.log('🎮 SimpleHand3D received sensorData:', sensorData);
     if (sensorData && handGroupRef.current) {
@@ -129,17 +148,36 @@ export default function SimpleHand3D({ sensorData }: { sensorData: SensorData | 
         rotation: sensorData.rotation
       });
 
-      // 更新手指弯曲
-      sensorData.fingers.forEach((value, index) => {
-        if (index < 5 && fingerGroupsRef.current[index]) {
-          console.log(`👆 Updating finger ${index} to value ${value}`);
-          updateFingerBending(index, value);
-        }
-      });
+      // 檢查是否為重置信號（所有手指都為0）
+      const isResetSignal = sensorData.fingers.every(value => value === 0);
 
-      // 更新手部旋转
-      console.log('🔄 Updating hand rotation:', sensorData.rotation);
-      updateHandRotation(sensorData.rotation);
+      if (isResetSignal) {
+        console.log('🔄 收到重置信號，重新初始化3D模型');
+
+        // 重置手部旋轉到水平面
+        handGroupRef.current.rotation.x = 0;
+        handGroupRef.current.rotation.y = 0;
+        handGroupRef.current.rotation.z = 0;
+
+        // 重置所有手指為伸直狀態
+        for (let i = 0; i < 5; i++) {
+          updateFingerBending(i, 0);
+        }
+
+        console.log('✅ 3D模型已重置為伸直狀態，手掌和手指在同一水平面');
+      } else {
+        // 正常更新手指弯曲（現在value是弯曲度，0=伸直，正值=彎曲）
+        sensorData.fingers.forEach((value, index) => {
+          if (index < 5 && fingerGroupsRef.current[index]) {
+            console.log(`👆 Updating finger ${index} to bend value ${value}`);
+            updateFingerBending(index, value);
+          }
+        });
+
+        // 更新手部旋转
+        console.log('🔄 Updating hand rotation:', sensorData.rotation);
+        updateHandRotation(sensorData.rotation);
+      }
     } else {
       console.log('❌ Cannot update 3D hand:', {
         hasSensorData: !!sensorData,
@@ -214,14 +252,15 @@ export default function SimpleHand3D({ sensorData }: { sensorData: SensorData | 
     wrist.castShadow = true;
     handGroup.add(wrist);
 
-    // 创建5根手指
+    // 创建5根手指 (左手邏輯：finger1=拇指, finger2=食指, finger3=中指, finger4=無名指, finger5=小指)
+    // 修改：所有手指都與手掌在同一水平面，初始狀態為伸直
     const fingerConfigs: FingerConfig[] = [
-      // baseRotation: [x, y, z]
-      { name: 'thumb',  position: [-1.7, 0.35, 1.2], scale: 0.9,  baseRotation: [0,  Math.PI / 10, -Math.PI / 6] },
-      { name: 'index',  position: [-0.9, 0.4,  2.2], scale: 1.0,  baseRotation: [0,  THREE.MathUtils.degToRad(2),  THREE.MathUtils.degToRad(-8)] },
-      { name: 'middle', position: [0,    0.4,  2.3], scale: 1.1,  baseRotation: [0,  0,                                     0] },
-      { name: 'ring',   position: [0.9,  0.4,  2.2], scale: 0.97, baseRotation: [0,  THREE.MathUtils.degToRad(-2), THREE.MathUtils.degToRad(6)] },
-      { name: 'pinky',  position: [1.7,  0.4,  1.9], scale: 0.82, baseRotation: [0,  THREE.MathUtils.degToRad(-4), THREE.MathUtils.degToRad(12)] }
+      // baseRotation: [x, y, z] - 設置為0確保與手掌在同一水平面
+      { name: 'thumb',  position: [1.7, 0.4, 1.2], scale: 0.9,  baseRotation: [0, 0, 0] },  // finger1: 拇指 - 水平伸直
+      { name: 'index',  position: [0.9, 0.4, 2.2], scale: 1.0,  baseRotation: [0, 0, 0] },  // finger2: 食指 - 水平伸直
+      { name: 'middle', position: [0,   0.4, 2.3], scale: 1.1,  baseRotation: [0, 0, 0] },  // finger3: 中指 - 水平伸直
+      { name: 'ring',   position: [-0.9, 0.4, 2.2], scale: 0.97, baseRotation: [0, 0, 0] }, // finger4: 無名指 - 水平伸直
+      { name: 'pinky',  position: [-1.7, 0.4, 1.9], scale: 0.82, baseRotation: [0, 0, 0] }  // finger5: 小指 - 水平伸直
     ];
 
     fingerGroupsRef.current = [];
@@ -302,8 +341,10 @@ export default function SimpleHand3D({ sensorData }: { sensorData: SensorData | 
     const finger = fingerGroupsRef.current[fingerIndex];
     if (!finger) return;
 
-    // 正規化與非線性映射（較符合人體彎曲）
-    const t = THREE.MathUtils.clamp(value / 1023, 0, 1);
+    // 現在value已經是弯曲度值（0=伸直，正值=彎曲）
+    // 將弯曲度值映射到0-1範圍，假設最大弯曲度為300
+    const maxBendValue = 300; // 可根據實際情況調整
+    const t = THREE.MathUtils.clamp(value / maxBendValue, 0, 1);
     const eased = t * t * (3 - 2 * t); // smoothstep
 
     // 角度上限（弧度）
@@ -317,6 +358,7 @@ export default function SimpleHand3D({ sensorData }: { sensorData: SensorData | 
     const dipAngle = (eased * maxDIP);
 
     // finger 結構：層級關節 [MCP, PIP, DIP]
+    // 修正：使用負角度，使手指往手掌內彎曲
     if (finger.children && finger.children.length >= 1) {
       const mcpPivot = finger.children[0] as THREE.Group;
       mcpPivot.rotation.x = -mcpAngle;

@@ -15,6 +15,11 @@ export interface GlobalConnectionManagerOptions {
   onConnectionStateChanged?: (state: ConnectionState) => void;
 }
 
+export interface PotentiometerSettings {
+  reversed: boolean;
+  maxBendValue: number;
+}
+
 export class GlobalConnectionManager {
   private static instance: GlobalConnectionManager | null = null;
   private bluetoothManager: BluetoothManager;
@@ -25,6 +30,12 @@ export class GlobalConnectionManager {
   private connectionState: ConnectionState;
   private callbacks: GlobalConnectionManagerOptions = {};
   private readBufferRef: string = '';
+
+  // Potentiometer settings
+  private potentiometerSettings: PotentiometerSettings = {
+    reversed: false,
+    maxBendValue: 200
+  };
 
   private constructor() {
     try {
@@ -65,8 +76,14 @@ export class GlobalConnectionManager {
 
   private setupBluetoothCallbacks() {
     this.bluetoothManager.onDataReceived = (data: SensorData) => {
-      this.callbacks.onDataReceived?.(data);
-      this.broadcastMessage('dataReceived', data);
+      // 調整手指數據方向
+      const adjustedData = {
+        ...data,
+        fingers: this.adjustFingerDirection(data.fingers)
+      };
+
+      this.callbacks.onDataReceived?.(adjustedData);
+      this.broadcastMessage('dataReceived', adjustedData);
     };
 
     this.bluetoothManager.onAIResultReceived = (result: AIResult) => {
@@ -256,8 +273,11 @@ export class GlobalConnectionManager {
       const values = parts.map(v => parseFloat(v));
 
       if (values.length >= 15) {
+        // 調整手指數據方向
+        const adjustedFingers = this.adjustFingerDirection(values.slice(0, 5));
+
         const data: SensorData = {
-          fingers: values.slice(0, 5),
+          fingers: adjustedFingers,
           accel: { x: values[6], y: values[7], z: values[8] },
           gyro: { x: values[9], y: values[10], z: values[11] },
           mag: { x: values[12], y: values[13], z: values[14] },
@@ -357,6 +377,39 @@ export class GlobalConnectionManager {
   // 请求其他页面的连接状态
   public requestConnectionState() {
     this.broadcastMessage('requestConnectionState', null);
+  }
+
+  // 設置電位器參數
+  public setPotentiometerSettings(settings: Partial<PotentiometerSettings>) {
+    this.potentiometerSettings = {
+      ...this.potentiometerSettings,
+      ...settings
+    };
+  }
+
+  // 獲取電位器設置
+  public getPotentiometerSettings(): PotentiometerSettings {
+    return { ...this.potentiometerSettings };
+  }
+
+  // 調整手指方向 - 處理電位器反向
+  private adjustFingerDirection(fingerData: number[]): number[] {
+    return fingerData.map((value, index) => {
+      let adjustedValue = value;
+
+      // 如果設置為反向電位器，將彎曲度反轉
+      if (this.potentiometerSettings.reversed) {
+        // 反轉公式：新值 = 最大值 - 原值
+        adjustedValue = Math.max(0, this.potentiometerSettings.maxBendValue - value);
+      }
+
+      // 小拇指敏感度增強 (index 4 是小拇指)
+      if (index === 4) {
+        return adjustedValue * 1.5; // 增加50%敏感度
+      }
+
+      return adjustedValue;
+    });
   }
 
   // 清理资源

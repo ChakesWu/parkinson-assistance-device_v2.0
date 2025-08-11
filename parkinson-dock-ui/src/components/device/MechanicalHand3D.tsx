@@ -26,6 +26,11 @@ const MechanicalHand3D: React.FC<MechanicalHand3DProps> = ({
     const handGroup = new THREE.Group();
     handGroupRef.current = handGroup;
 
+    // 設置手部初始旋轉，確保手掌和手指在同一水平面
+    handGroup.rotation.x = 0;
+    handGroup.rotation.y = 0;
+    handGroup.rotation.z = 0;
+
     // 創建手掌
     const palmGeometry = new THREE.BoxGeometry(3, 0.8, 4);
     const palmMaterial = new THREE.MeshPhysicalMaterial({
@@ -176,13 +181,17 @@ const MechanicalHand3D: React.FC<MechanicalHand3DProps> = ({
     if (fingerIndex < 0 || fingerIndex >= 5) return;
     const fingerGroup = fingerGroupsRef.current[fingerIndex];
     if (!fingerGroup) return;
-    
-    const bendAngle = (value / 1023) * Math.PI / 2; // 0-90度
+
+    // 現在value是弯曲度值（0=伸直，正值=彎曲）
+    const maxBendValue = 300;
+    const normalizedValue = Math.max(0, Math.min(value / maxBendValue, 1));
+    const bendAngle = normalizedValue * Math.PI / 2; // 0-90度
     
     // 更新每個關節
+    // 修改：使用正角度，讓手指在水平面上彎曲
     fingerGroup.children.forEach((joint, jointIndex) => {
       const jointBend = bendAngle * (jointIndex + 1) / fingerGroup.children.length;
-      joint.rotation.x = -jointBend;
+      joint.rotation.x = jointBend; // 改為正角度，水平面彎曲
     });
   };
 

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useGlobalConnection } from '@/hooks/useGlobalConnection';
 import { SensorData, AIResult } from '@/utils/bluetoothManager';
 import { analysisRecordService } from '@/services/analysisRecordService';
+import { GlobalConnectionManager } from '@/utils/globalConnectionManager';
 
 export interface GlobalConnectorProps {
   onDataReceived?: (data: Partial<SensorData>) => void;
@@ -37,6 +38,9 @@ export default function GlobalConnector({
 
   const [isInitialized, setIsInitialized] = useState(false);
 
+  // 電位器方向設置
+  const [potentiometerReversed, setPotentiometerReversed] = useState(false);
+
   const {
     connectionState,
     isConnected,
@@ -64,6 +68,14 @@ export default function GlobalConnector({
 
     return () => clearTimeout(timer);
   }, []);
+
+  // 處理電位器設置變更
+  useEffect(() => {
+    const manager = GlobalConnectionManager.getInstance();
+    manager.setPotentiometerSettings({
+      reversed: potentiometerReversed
+    });
+  }, [potentiometerReversed]);
 
   // 处理数据接收
   function handleDataReceived(data: SensorData) {
@@ -316,6 +328,34 @@ export default function GlobalConnector({
           </div>
         </div>
       )}
+
+      {/* 電位器方向設置 */}
+      <div className="mt-4 p-4 bg-gray-50 dark:bg-neutral-700 rounded-lg">
+        <h3 className="text-sm font-medium mb-2">電位器設置</h3>
+        <div className="flex items-center space-x-3">
+          <label className="flex items-center cursor-pointer">
+            <input
+              type="checkbox"
+              checked={potentiometerReversed}
+              onChange={(e) => setPotentiometerReversed(e.target.checked)}
+              className="sr-only"
+            />
+            <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              potentiometerReversed ? 'bg-blue-600' : 'bg-gray-300'
+            }`}>
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                potentiometerReversed ? 'translate-x-6' : 'translate-x-1'
+              }`} />
+            </div>
+            <span className="ml-3 text-sm">
+              反向電位器 {potentiometerReversed ? '(減少=彎曲)' : '(增加=彎曲)'}
+            </span>
+          </label>
+        </div>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          如果手指彎曲方向相反，請開啟此選項
+        </p>
+      </div>
 
       {/* 传感器数据 */}
       {showSensorData && isConnected && (

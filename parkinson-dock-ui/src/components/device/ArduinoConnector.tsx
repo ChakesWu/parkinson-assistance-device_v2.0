@@ -30,6 +30,14 @@ export default function ArduinoConnector({ onDataReceived }: ArduinoConnectorPro
   const [error, setError] = useState<string | null>(null);
   const readBufferRef = useRef<string>('');
 
+  // 初始化相关状态
+  const [isInitializing, setIsInitializing] = useState(false);
+  const [initializationComplete, setInitializationComplete] = useState(false);
+  const [fingerBaselines, setFingerBaselines] = useState<number[]>([0, 0, 0, 0, 0]);
+
+  // 電位器方向設置
+  const [potentiometerReversed, setPotentiometerReversed] = useState(false);
+
   // AI分析结果状态
   const [aiAnalysisData, setAiAnalysisData] = useState({
     analysisCount: 0,
@@ -89,11 +97,25 @@ export default function ArduinoConnector({ onDataReceived }: ArduinoConnectorPro
       // 開始讀取數據
       readData(newReader);
 
-      // 自動開始數據採集
-      await new Promise(r => setTimeout(r, 100));
-      await newWriter.write('START\n');
-      // 可選: 查詢狀態
+      // 重置初始化状态
+      setIsInitializing(false);
+      setInitializationComplete(false);
+      setFingerBaselines([0, 0, 0, 0, 0]);
+      setIsConnected(true);
+
+      // 連接成功後等待設備穩定
+      await new Promise(r => setTimeout(r, 1000));
+      console.log('🔄 串口設備已連接，開始重新初始化...');
+      console.log('📋 請確保手指完全伸直，準備進行基線校準');
+
+      // 查詢狀態
       await newWriter.write('STATUS\n');
+
+      // 等待一下再開始初始化，確保設備響應
+      await new Promise(r => setTimeout(r, 500));
+
+      // Arduino會自動處理校準，前端只需要調整方向
+      console.log('🚀 串口連接：Arduino將自動處理校準');
       
     } catch (err) {
       console.error('連接錯誤:', err);
@@ -168,18 +190,35 @@ export default function ArduinoConnector({ onDataReceived }: ArduinoConnectorPro
         const trimmedLine = line.trim();
         if (!trimmedLine) continue;
 
-        // 解析 DATA 格式: DATA,finger1,finger2,finger3,finger4,finger5,emg,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,mag_x,mag_y,mag_z
+        // 添加調試信息
+        console.log('📥 收到串口數據:', trimmedLine);
+
+        // 處理初始化完成信號
+        if (trimmedLine === 'INIT_COMPLETE') {
+          console.log('✅ Arduino設備初始化完成！');
+          // Arduino初始化完成後，開始網頁端初始化
+          startWebInitialization();
+          return;
+        }
+
+        // 解析 DATA 格式: DATA,thumb,index,middle,ring,pinky,emg,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,mag_x,mag_y,mag_z
+        // 左手邏輯：finger1=拇指, finger2=食指, finger3=中指, finger4=無名指, finger5=小指
         if (trimmedLine.startsWith('DATA,')) {
           const parts = trimmedLine.split(',');
+          console.log('📊 解析DATA，parts長度:', parts.length, 'parts:', parts);
+
           if (parts.length >= 16) { // DATA + 15 values (含 accel/gyro/mag)
-            // 解析手指數據 (索引 1-5)
-            const fingers = [
-              parseInt(parts[1]),
-              parseInt(parts[2]),
-              parseInt(parts[3]),
-              parseInt(parts[4]),
-              parseInt(parts[5])
+            // 解析原始手指數據 (索引 1-5) - 左手順序：拇指到小指
+            const rawFingers = [
+              parseInt(parts[1]),  // 拇指原始值
+              parseInt(parts[2]),  // 食指原始值
+              parseInt(parts[3]),  // 中指原始值
+              parseInt(parts[4]),  // 無名指原始值
+              parseInt(parts[5])   // 小指原始值
             ];
+
+            // 處理電位器方向調整
+            const processedFingers = adjustFingerDirection(rawFingers);
 
             // 解析 IMU 數據 (索引 7-15)
             const accel = {
@@ -202,7 +241,7 @@ export default function ArduinoConnector({ onDataReceived }: ArduinoConnectorPro
 
             // 更新傳感器數據
             const newSensorData = {
-              fingers,
+              fingers: processedFingers,
               accel,
               gyro,
               mag,
@@ -212,15 +251,17 @@ export default function ArduinoConnector({ onDataReceived }: ArduinoConnectorPro
             setSensorData(newSensorData as SensorData);
             onDataReceived?.(newSensorData);
 
-            console.log('解析到數據:', newSensorData);
+            if (isInitializing) {
+              console.log('初始化中，原始數據:', rawFingers, '處理後:', processedFingers);
+            }
           } else if (parts.length >= 10) { // DATA + 9 values (fingers(5), emg(1), accel(3))
-            // 解析手指數據 (索引 1-5)
+            // 解析手指數據 (索引 1-5) - 左手順序：拇指到小指
             const rawFingers = [
-              parseInt(parts[1]),
-              parseInt(parts[2]),
-              parseInt(parts[3]),
-              parseInt(parts[4]),
-              parseInt(parts[5])
+              parseInt(parts[1]),  // 拇指 (finger1)
+              parseInt(parts[2]),  // 食指 (finger2)
+              parseInt(parts[3]),  // 中指 (finger3)
+              parseInt(parts[4]),  // 無名指 (finger4)
+              parseInt(parts[5])   // 小指 (finger5)
             ];
             // 限幅到 0..1023，避免負值導致 3D 模型反向或 UI 條形圖異常
             const fingers = rawFingers.map(v => Math.max(0, Math.min(1023, v)));
@@ -385,6 +426,108 @@ export default function ArduinoConnector({ onDataReceived }: ArduinoConnectorPro
     }
   };
 
+  // 網頁端初始化函數
+  const startWebInitialization = () => {
+    console.log('🔄 開始網頁端手指基線初始化...');
+    console.log('📋 請保持手指完全伸直，3秒後開始收集基線數據');
+
+    setIsInitializing(true);
+    setInitializationComplete(false);
+
+    // 3秒倒計時
+    let countdown = 3;
+    const countdownInterval = setInterval(() => {
+      console.log(`⏰ 倒計時: ${countdown} 秒...`);
+      countdown--;
+      if (countdown < 0) {
+        clearInterval(countdownInterval);
+        collectBaseline();
+      }
+    }, 1000);
+  };
+
+  // 收集基線數據
+  const collectBaseline = () => {
+    console.log('📊 開始收集手指伸直基線數據...');
+
+    const baselineData: number[][] = [[], [], [], [], []]; // 5個手指的數據收集
+    const sampleCount = 30; // 收集30個樣本（約3秒）
+    let currentSample = 0;
+
+    const collectInterval = setInterval(() => {
+      if (sensorData && currentSample < sampleCount) {
+        // 收集當前的原始數據作為基線
+        sensorData.fingers.forEach((value, index) => {
+          baselineData[index].push(value);
+        });
+
+        currentSample++;
+        console.log(`📈 收集進度: ${currentSample}/${sampleCount}`);
+
+      } else if (currentSample >= sampleCount) {
+        clearInterval(collectInterval);
+
+        // 計算平均基線值
+        const newBaselines = baselineData.map(fingerData => {
+          const sum = fingerData.reduce((a, b) => a + b, 0);
+          return sum / fingerData.length;
+        });
+
+        setFingerBaselines(newBaselines);
+        setIsInitializing(false);
+        setInitializationComplete(true);
+
+        console.log('✅ 網頁端初始化完成！');
+        console.log('📊 手指伸直基線值:', newBaselines);
+        console.log('🎯 3D模型已重置為伸直狀態');
+        console.log('👆 現在可以開始手指彎曲檢測');
+
+        // 通知3D模型重置為伸直狀態
+        onDataReceived?.({
+          fingers: [0, 0, 0, 0, 0], // 重置為伸直狀態
+          accel: { x: 0, y: 0, z: 0 },
+          gyro: { x: 0, y: 0, z: 0 },
+          mag: { x: 0, y: 0, z: 0 },
+          emg: 0
+        });
+      }
+    }, 100); // 每100ms收集一次
+  };
+
+  // 調整手指方向 - 直接反轉數據
+  const adjustFingerDirection = (fingerData: number[]): number[] => {
+    const result = fingerData.map((value, index) => {
+      let adjustedValue = value;
+
+      // 如果設置為反向電位器，將彎曲度反轉
+      if (potentiometerReversed) {
+        // 假設正常情況下，彎曲度範圍是0-200
+        // 反轉公式：新值 = 最大值 - 原值
+        const maxValue = 200;
+        adjustedValue = Math.max(0, maxValue - value);
+
+        // 調試信息
+        if (index === 0) { // 只為第一個手指打印調試信息
+          console.log(`🔄 反向模式: 原值=${value} → 調整值=${adjustedValue}`);
+        }
+      }
+
+      // 小拇指敏感度增強 (index 4 是小拇指)
+      if (index === 4) {
+        return adjustedValue * 1.5; // 增加50%敏感度
+      }
+
+      return adjustedValue;
+    });
+
+    // 調試信息
+    if (potentiometerReversed) {
+      console.log('🔄 反向電位器已啟用，原數據:', fingerData, '調整後:', result);
+    }
+
+    return result;
+  };
+
   // 組件卸載時斷開連接
   useEffect(() => {
     return () => {
@@ -452,13 +595,41 @@ export default function ArduinoConnector({ onDataReceived }: ArduinoConnectorPro
           </button>
         )}
         
-        <button 
+        <button
           className={`bg-purple-500 hover:bg-purple-600 text-white py-2 px-4 rounded-lg transition ${!isConnected ? 'opacity-50 cursor-not-allowed' : ''}`}
           disabled={!isConnected}
           onClick={() => sendCommand('START')}
         >
           同步數據
         </button>
+      </div>
+
+      {/* 電位器方向設置 */}
+      <div className="mt-4 p-4 bg-gray-50 dark:bg-neutral-700 rounded-lg">
+        <h3 className="text-sm font-medium mb-2">電位器設置</h3>
+        <div className="flex items-center space-x-3">
+          <label className="flex items-center cursor-pointer">
+            <input
+              type="checkbox"
+              checked={potentiometerReversed}
+              onChange={(e) => setPotentiometerReversed(e.target.checked)}
+              className="sr-only"
+            />
+            <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              potentiometerReversed ? 'bg-blue-600' : 'bg-gray-300'
+            }`}>
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                potentiometerReversed ? 'translate-x-6' : 'translate-x-1'
+              }`} />
+            </div>
+            <span className="ml-3 text-sm">
+              反向電位器 {potentiometerReversed ? '(減少=彎曲)' : '(增加=彎曲)'}
+            </span>
+          </label>
+        </div>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          如果手指彎曲方向相反，請開啟此選項
+        </p>
       </div>
 
       {isConnected && (

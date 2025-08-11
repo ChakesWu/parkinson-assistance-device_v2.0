@@ -1217,11 +1217,12 @@ void sendContinuousWebData() {
 }
 
 void readRawSensorDataForWeb(float* data) {
-    data[0] = readFingerValue(PIN_PINKY);
-    data[1] = readFingerValue(PIN_RING);
-    data[2] = readFingerValue(PIN_MIDDLE);
-    data[3] = readFingerValue(PIN_INDEX);
-    data[4] = readFingerValue(PIN_THUMB);
+    // 左手邏輯：拇指到小指
+    data[0] = readFingerValue(PIN_THUMB);    // 拇指 (左手finger1)
+    data[1] = readFingerValue(PIN_INDEX);    // 食指 (左手finger2)
+    data[2] = readFingerValue(PIN_MIDDLE);   // 中指 (左手finger3)
+    data[3] = readFingerValue(PIN_RING);     // 無名指 (左手finger4)
+    data[4] = readFingerValue(PIN_PINKY);    // 小指 (左手finger5)
     data[5] = readEMGValue();
 
     float ax, ay, az;

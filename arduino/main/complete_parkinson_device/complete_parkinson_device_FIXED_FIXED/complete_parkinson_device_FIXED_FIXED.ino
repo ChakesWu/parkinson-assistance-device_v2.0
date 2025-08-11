@@ -1,14 +1,21 @@
 /*
- * Complete Parkinson Assistance System with Research-Grade Speech Analysis
+ * Complete Parkinson Assistance System with Research-Grade Speech Analysis (FIXED VERSION)
  * Integrated solution for sensor collection, AI inference, speech analysis, and training control
  *
  * Hardware Requirements:
  * - Arduino Nano 33 BLE Sense Rev2
- * - 5 potentiometers (A0-A4)
+ * - 5 potentiometers (A4=拇指, A3=食指, A2=中指, A1=无名指, A0=小指) - LEFT HAND LOGIC
  * - EMG sensor (A5)
  * - Servo (D9)
- * - Detection pins (D2, D3)
+ * - Detection pins (D2=connect to GND for real potentiometer data, D3=EMG detect)
  * - Built-in PDM microphone for speech analysis
+ *
+ * FIXES APPLIED:
+ * - Fixed printSystemStatus() function (removed incorrect comments)
+ * - Added device detection status display
+ * - Implemented complete left hand logic mapping
+ * - Added detailed status information output
+ * - Fixed all "TensorFlowLiteInference initialized" error messages
  */
 
 #include <Arduino.h>
@@ -36,7 +43,7 @@
 
 // System Parameters
 const unsigned long SAMPLE_RATE = 100;        // Sampling interval (ms)
-const unsigned long BASELINE_DURATION = 2000;  // Calibration duration (ms)
+const unsigned long BASELINE_DURATION = 3000;  // Calibration duration (ms) - 改为3秒
 const unsigned long INFERENCE_INTERVAL = 5000; // Inference interval (ms)
 const unsigned long WEB_DATA_INTERVAL = 100;   // Web data sending interval (ms)
 
@@ -74,10 +81,11 @@ unsigned long lastSampleTime = 0;
 unsigned long lastWebDataTime = 0;
 int analysisCount = 0;
 
-// Calibration Baselines
-float fingerBaseline[5] = {0};
+// Calibration Baselines - 手指伸直时的基线值
+float fingerBaseline[5] = {0};  // 存储手指完全伸直时的电位器值
 float emgBaseline = 0;
 bool isCalibrated = false;
+bool autoInitialized = false;  // 标记是否已自动初始化
 
 // Prediction Results
 int currentParkinsonsLevel = 0;
@@ -228,6 +236,7 @@ void printSystemStatus();
 void sendContinuousWebData();
 void readRawSensorDataForWeb(float* data);
 void sendRawDataToWeb(float* rawData);
+void startAutoCalibration();  // 自动校准函数
 
 // Speech Analysis Function Declarations
 void startSpeechAnalysis();
@@ -237,6 +246,7 @@ void processValidAudioData();
 void processSpeechData();
 void resetSpeechFeatures();
 void sendSpeechResultViaBLE();
+void runHardwareDiagnosis();  // 硬件诊断函数
 
 // BLE Function Declarations
 void initializeBLE();
@@ -286,6 +296,31 @@ void setup() {
     Serial.println("✓ Jitter, Shimmer, HNR特征提取");
     Serial.println("✓ 蓝牙连接 + 网页操作");
     Serial.println("Communication modes: Serial + Bluetooth LE");
+
+    // 显示初始设备检测状态
+    Serial.println("=== 设备检测 ===");
+    Serial.print("电位器检测引脚(D2): ");
+    Serial.println(digitalRead(PIN_POT_DETECT) == HIGH ? "HIGH" : "LOW");
+    Serial.print("EMG检测引脚(D3): ");
+    Serial.println(digitalRead(PIN_EMG_DETECT) == HIGH ? "HIGH" : "LOW");
+    Serial.print("电位器: ");
+    Serial.println(isPotentiometerConnected() ? "已连接" : "模拟模式");
+    Serial.print("EMG设备: ");
+    Serial.println(isEMGConnected() ? "已连接" : "模拟模式");
+    Serial.println("================");
+    Serial.println("💡 提示: 如果电位器显示'模拟模式'，请用跳线连接D2引脚到GND");
+    Serial.println("💡 支持命令: STATUS, AUTO, CALIBRATE, TRAIN, SPEECH, MULTIMODAL, DIAGNOSE");
+    Serial.println("🔧 如果小指数据异常，请发送 DIAGNOSE 命令进行硬件检测");
+
+    // 检查电位器连接状态，如果连接则自动开始校准
+    if (isPotentiometerConnected() && !autoInitialized) {
+        Serial.println("🔍 检测到电位器已连接，将在3秒后开始自动初始化...");
+        Serial.println("📋 请确保所有手指完全伸直，保持静止状态");
+        Serial.println("⚠️  初始化期间收集的数据将作为手指伸直的基线值");
+        delay(3000);
+        startAutoCalibration();
+        autoInitialized = true;
+    }
 }
 
 void loop() {
@@ -377,6 +412,8 @@ void handleSerialCommands() {
             startSpeechAnalysis();
         } else if (cmd == "MULTIMODAL") {
             startMultiModalAnalysis();
+        } else if (cmd == "DIAGNOSE") {
+            runHardwareDiagnosis();
         }
     }
 }
@@ -415,12 +452,80 @@ void stopRealTimeAnalysis() {
     digitalWrite(PIN_LED_STATUS, LOW);
 }
 
+void startAutoCalibration() {
+    Serial.println("=== 开始自动初始化校准 ===");
+    Serial.println("正在收集手指伸直状态的基线数据...");
+    Serial.println("请保持所有手指完全伸直，不要移动！");
+
+    currentState = STATE_CALIBRATING;
+
+    // 重置校准数据
+    for (int i = 0; i < 5; i++) {
+        fingerBaseline[i] = 0;
+    }
+    emgBaseline = 0;
+
+    unsigned long startTime = millis();
+    int sampleCount = 0;
+
+    // 3秒倒计时显示
+    Serial.println("开始3秒数据收集...");
+
+    while (millis() - startTime < BASELINE_DURATION) {
+        // 读取传感器数据 (手指伸直状态)
+        fingerBaseline[0] += readFingerValue(PIN_PINKY);
+        fingerBaseline[1] += readFingerValue(PIN_RING);
+        fingerBaseline[2] += readFingerValue(PIN_MIDDLE);
+        fingerBaseline[3] += readFingerValue(PIN_INDEX);
+        fingerBaseline[4] += readFingerValue(PIN_THUMB);
+        emgBaseline += readEMGValue();
+
+        sampleCount++;
+        delay(SAMPLE_RATE);
+
+        // 进度指示器
+        if (sampleCount % 5 == 0) {
+            Serial.print(".");
+        }
+
+        // 每秒显示进度
+        if (sampleCount % 10 == 0) {
+            float progress = ((float)(millis() - startTime) / BASELINE_DURATION) * 100;
+            Serial.print(" ");
+            Serial.print(progress, 0);
+            Serial.println("%");
+        }
+    }
+
+    // 计算平均值 (手指伸直时的基线值)
+    for (int i = 0; i < 5; i++) {
+        fingerBaseline[i] /= sampleCount;
+    }
+    emgBaseline /= sampleCount;
+
+    isCalibrated = true;
+
+    Serial.println("\n✅ 初始化校准完成！");
+    Serial.println("手指伸直基线值已设定:");
+    Serial.print("  拇指(A4): "); Serial.println(fingerBaseline[4], 1);
+    Serial.print("  食指(A3): "); Serial.println(fingerBaseline[3], 1);
+    Serial.print("  中指(A2): "); Serial.println(fingerBaseline[2], 1);
+    Serial.print("  无名指(A1): "); Serial.println(fingerBaseline[1], 1);
+    Serial.print("  小指(A0): "); Serial.println(fingerBaseline[0], 1);
+    Serial.print("  EMG基线: "); Serial.println(emgBaseline, 1);
+    Serial.println("📊 现在电位器值减少时将表示手指弯曲");
+    Serial.println("🎯 3D模型已设置为伸直状态");
+
+    // 发送初始化完成信号给前端
+    Serial.println("INIT_COMPLETE");
+
+    currentState = STATE_IDLE;
+}
+
 void startCalibration() {
-    Serial.println("TensorFlowLiteInference initialized");
-        //n("=== Starting Baseline Calibration ===");
-    Serial.println("TensorFlowLiteInference initialized");
-        //n("Please keep hand relaxed and still...");
-    
+    Serial.println("=== 手动校准模式 ===");
+    Serial.println("请保持手部放松和静止...");
+
     currentState = STATE_CALIBRATING;
     
     // Reset calibration data
@@ -625,8 +730,7 @@ void performSingleAnalysis() {
             outputDetailedAnalysisResults();
             
             // Analysis complete, return to idle
-            Serial.println("TensorFlowLiteInference initialized");
-        //n("Analysis complete. System returning to idle.");
+            Serial.println("✅ Analysis complete. System returning to idle.");
             currentState = STATE_IDLE;
             digitalWrite(PIN_LED_STATUS, LOW);
         }
@@ -662,9 +766,45 @@ void outputDetailedAnalysisResults() {
     sendAIResultViaBLE();
 }
 
+// 添加滤波器来稳定小指数据
+float pinkyFilter[5] = {0}; // 存储最近5次读数
+int pinkyFilterIndex = 0;
+
 float readFingerValue(int pin) {
     if (isPotentiometerConnected()) {
-        return analogRead(pin);
+        float rawValue = analogRead(pin);
+
+        // 特别处理小指引脚 (A0) 的噪声问题
+        if (pin == PIN_PINKY) {
+            // 使用移动平均滤波器
+            pinkyFilter[pinkyFilterIndex] = rawValue;
+            pinkyFilterIndex = (pinkyFilterIndex + 1) % 5;
+
+            // 计算平均值
+            float sum = 0;
+            for (int i = 0; i < 5; i++) {
+                sum += pinkyFilter[i];
+            }
+            float filteredValue = sum / 5.0;
+
+            // 额外的异常值检测和修正
+            static float lastValidPinkyValue = 512; // 初始值
+            float diff = abs(filteredValue - lastValidPinkyValue);
+
+            // 如果变化超过200，可能是噪声，使用上次的值
+            if (diff > 200 && lastValidPinkyValue != 512) {
+                Serial.print("PINKY_NOISE_FILTERED: ");
+                Serial.print(rawValue);
+                Serial.print(" -> ");
+                Serial.println(lastValidPinkyValue);
+                return lastValidPinkyValue;
+            } else {
+                lastValidPinkyValue = filteredValue;
+                return filteredValue;
+            }
+        } else {
+            return rawValue;
+        }
     } else {
         // Simulate signal
         unsigned long currentTime = millis();
@@ -686,16 +826,16 @@ float readEMGValue() {
 }
 
 void readNormalizedSensorData(float* data) {
-    // Read and normalize finger data
-    data[0] = readFingerValue(PIN_PINKY) - fingerBaseline[0];
-    data[1] = readFingerValue(PIN_RING) - fingerBaseline[1];
-    data[2] = readFingerValue(PIN_MIDDLE) - fingerBaseline[2];
-    data[3] = readFingerValue(PIN_INDEX) - fingerBaseline[3];
-    data[4] = readFingerValue(PIN_THUMB) - fingerBaseline[4];
-    
+    // Read and normalize finger data (基线值减去当前值，确保弯曲时为正值)
+    data[0] = fingerBaseline[0] - readFingerValue(PIN_PINKY);   // 小指弯曲度
+    data[1] = fingerBaseline[1] - readFingerValue(PIN_RING);   // 无名指弯曲度
+    data[2] = fingerBaseline[2] - readFingerValue(PIN_MIDDLE); // 中指弯曲度
+    data[3] = fingerBaseline[3] - readFingerValue(PIN_INDEX);  // 食指弯曲度
+    data[4] = fingerBaseline[4] - readFingerValue(PIN_THUMB);  // 拇指弯曲度
+
     // Read and normalize EMG data
     data[5] = readEMGValue() - emgBaseline;
-    
+
     // Read IMU data
     float x, y, z;
     IMU.readAcceleration(x, y, z);
@@ -721,49 +861,43 @@ void controlServo(int angle) {
 }
 
 void printSystemStatus() {
-    Serial.println("TensorFlowLiteInference initialized");
-        //n("=== System Status ===");
+    Serial.println("=== System Status ===");
     Serial.print("Current state: ");
     switch (currentState) {
-        case STATE_IDLE: Serial.println("TensorFlowLiteInference initialized");
-        //n("Idle"); break;
-        case STATE_CALIBRATING: Serial.println("TensorFlowLiteInference initialized");
-        //n("Calibrating"); break;
-        case STATE_COLLECTING: Serial.println("TensorFlowLiteInference initialized");
-        //n("Collecting data"); break;
-        case STATE_TRAINING: Serial.println("TensorFlowLiteInference initialized");
-        //n("Training"); break;
-        case STATE_REAL_TIME_ANALYSIS: Serial.println("TensorFlowLiteInference initialized");
-        //n("Real-time analysis"); break;
+        case STATE_IDLE: Serial.println("Idle"); break;
+        case STATE_CALIBRATING: Serial.println("Calibrating"); break;
+        case STATE_COLLECTING: Serial.println("Collecting data"); break;
+        case STATE_TRAINING: Serial.println("Training"); break;
+        case STATE_REAL_TIME_ANALYSIS: Serial.println("Real-time analysis"); break;
     }
-    
+
     Serial.print("Calibration status: ");
-    Serial.println("TensorFlowLiteInference initialized");
-        //n(isCalibrated ? "Calibrated" : "Not calibrated");
-    
+    Serial.println(isCalibrated ? "Calibrated" : "Not calibrated");
+
     Serial.print("Potentiometers: ");
-    Serial.println("TensorFlowLiteInference initialized");
-        //n(isPotentiometerConnected() ? "Connected" : "Simulated");
-    
+    Serial.println(isPotentiometerConnected() ? "Connected" : "Simulated");
+
     Serial.print("EMG device: ");
-    Serial.println("TensorFlowLiteInference initialized");
-        //n(isEMGConnected() ? "Connected" : "Simulated");
-    
+    Serial.println(isEMGConnected() ? "Connected" : "Simulated");
+
+    // 显示设备检测引脚状态
+    Serial.print("Potentiometer detect pin (D2): ");
+    Serial.println(digitalRead(PIN_POT_DETECT) == HIGH ? "HIGH" : "LOW");
+    Serial.print("EMG detect pin (D3): ");
+    Serial.println(digitalRead(PIN_EMG_DETECT) == HIGH ? "HIGH" : "LOW");
+
     if (hasValidPrediction) {
         Serial.print("Parkinson's level: ");
         Serial.print(currentParkinsonsLevel);
         Serial.print(" (Confidence: ");
         Serial.print(currentConfidence * 100, 1);
-        Serial.println("TensorFlowLiteInference initialized");
-        //n("%)");
+        Serial.println("%)");
     } else {
-        Serial.println("TensorFlowLiteInference initialized");
-        //n("Parkinson's level: Not analyzed");
+        Serial.println("Parkinson's level: Not analyzed");
     }
-    
+
     aiModel.printBufferStatus();
-    Serial.println("TensorFlowLiteInference initialized");
-        //n("=====================");
+    Serial.println("=====================");
 }
 
 void sendContinuousWebData() {
@@ -789,13 +923,71 @@ void sendContinuousWebData() {
     }
 }
 
+// 硬件诊断和数据稳定性检查
+bool isPinkyDataStable() {
+    static unsigned long lastCheck = 0;
+    static int unstableCount = 0;
+
+    if (millis() - lastCheck > 1000) { // 每秒检查一次
+        // 检查小指数据的稳定性
+        float variance = 0;
+        float mean = 0;
+
+        // 计算方差
+        for (int i = 0; i < 5; i++) {
+            mean += pinkyFilter[i];
+        }
+        mean /= 5.0;
+
+        for (int i = 0; i < 5; i++) {
+            variance += (pinkyFilter[i] - mean) * (pinkyFilter[i] - mean);
+        }
+        variance /= 5.0;
+
+        if (variance > 10000) { // 方差过大表示不稳定
+            unstableCount++;
+            if (unstableCount > 3) {
+                Serial.println("WARNING: 小指传感器数据不稳定，可能存在硬件问题");
+                Serial.print("方差: ");
+                Serial.println(variance);
+                return false;
+            }
+        } else {
+            unstableCount = 0;
+        }
+
+        lastCheck = millis();
+    }
+    return true;
+}
+
 void readRawSensorDataForWeb(float* data) {
-    // Read raw sensor data for web
-    data[0] = readFingerValue(PIN_PINKY);    // Pinky
-    data[1] = readFingerValue(PIN_RING);     // Ring finger
-    data[2] = readFingerValue(PIN_MIDDLE);   // Middle finger
-    data[3] = readFingerValue(PIN_INDEX);    // Index finger
-    data[4] = readFingerValue(PIN_THUMB);    // Thumb
+    // 如果已校准，发送弯曲度数据；否则发送原始数据
+    if (isCalibrated) {
+        // 发送手指弯曲度数据 (基线值 - 当前值，弯曲时为正值)
+        // 左手逻辑：拇指到小指
+        data[0] = max(0.0f, fingerBaseline[4] - readFingerValue(PIN_THUMB));    // 拇指弯曲度
+        data[1] = max(0.0f, fingerBaseline[3] - readFingerValue(PIN_INDEX));    // 食指弯曲度
+        data[2] = max(0.0f, fingerBaseline[2] - readFingerValue(PIN_MIDDLE));   // 中指弯曲度
+        data[3] = max(0.0f, fingerBaseline[1] - readFingerValue(PIN_RING));     // 无名指弯曲度
+
+        // 小指特殊处理：检查数据稳定性
+        float pinkyBendValue = max(0.0f, fingerBaseline[0] - readFingerValue(PIN_PINKY));
+        if (!isPinkyDataStable()) {
+            // 如果小指数据不稳定，使用固定值或上次稳定值
+            static float lastStablePinkyValue = 0;
+            data[4] = lastStablePinkyValue;
+        } else {
+            data[4] = pinkyBendValue;
+        }
+    } else {
+        // 未校准时发送原始数据 (初始化时3D模型显示伸直状态)
+        data[0] = 0;  // 拇指 - 伸直状态
+        data[1] = 0;  // 食指 - 伸直状态
+        data[2] = 0;  // 中指 - 伸直状态
+        data[3] = 0;  // 无名指 - 伸直状态
+        data[4] = 0;  // 小指 - 伸直状态
+    }
     data[5] = readEMGValue();                // EMG
     
     // Read complete IMU data
@@ -1096,6 +1288,18 @@ void startSpeechAnalysis() {
 
     // 重置语音特征变量
     resetSpeechFeatures();
+
+    // 重新初始化PDM以確保每次錄音都獲得穩定數據（與 speech_integration_test 一致）
+    PDM.end();
+    delay(100);
+    PDM.onReceive(onPDMdata);
+    if (!PDM.begin(AUDIO_CHANNELS, AUDIO_SAMPLE_RATE)) {
+        Serial.println("ERROR: PDM重新初始化失败!");
+        currentState = STATE_IDLE;
+        return;
+    }
+    PDM.setGain(30);
+    Serial.println("PDM重新初始化成功，等待稳定...");
 
     // 开始录音
     speechRecording = true;
@@ -1530,4 +1734,107 @@ void sendSpeechResultViaBLE() {
 
     speechDataCharacteristic.writeValue(speechResult);
     Serial.println("语音分析结果已发送至BLE");
+}
+
+// 硬件诊断函数
+void runHardwareDiagnosis() {
+    Serial.println("=== 硬件诊断开始 ===");
+
+    // 1. 检查电位器连接状态
+    Serial.print("电位器检测引脚(D2): ");
+    Serial.println(digitalRead(PIN_POT_DETECT) == HIGH ? "HIGH (未连接)" : "LOW (已连接)");
+
+    // 2. 测试所有电位器引脚
+    Serial.println("电位器原始数据测试 (10次采样):");
+    Serial.println("引脚\t平均值\t最小值\t最大值\t方差\t状态");
+
+    int pins[] = {PIN_THUMB, PIN_INDEX, PIN_MIDDLE, PIN_RING, PIN_PINKY};
+    String pinNames[] = {"拇指(A4)", "食指(A3)", "中指(A2)", "无名指(A1)", "小指(A0)"};
+
+    for (int p = 0; p < 5; p++) {
+        float readings[10];
+        float sum = 0, minVal = 1023, maxVal = 0;
+
+        // 采集10次数据
+        for (int i = 0; i < 10; i++) {
+            readings[i] = analogRead(pins[p]);
+            sum += readings[i];
+            if (readings[i] < minVal) minVal = readings[i];
+            if (readings[i] > maxVal) maxVal = readings[i];
+            delay(50);
+        }
+
+        float mean = sum / 10.0;
+        float variance = 0;
+
+        // 计算方差
+        for (int i = 0; i < 10; i++) {
+            variance += (readings[i] - mean) * (readings[i] - mean);
+        }
+        variance /= 10.0;
+
+        // 判断状态
+        String status = "正常";
+        if (variance > 1000) {
+            status = "不稳定";
+        } else if (maxVal - minVal > 100) {
+            status = "噪声较大";
+        } else if (mean < 10 || mean > 1013) {
+            status = "可能断线";
+        }
+
+        Serial.print(pinNames[p]);
+        Serial.print("\t");
+        Serial.print(mean, 1);
+        Serial.print("\t");
+        Serial.print(minVal, 0);
+        Serial.print("\t");
+        Serial.print(maxVal, 0);
+        Serial.print("\t");
+        Serial.print(variance, 1);
+        Serial.print("\t");
+        Serial.println(status);
+
+        // 特别检查小指
+        if (p == 4 && variance > 1000) {
+            Serial.println("⚠️  小指传感器检测到严重噪声问题！");
+            Serial.println("建议检查:");
+            Serial.println("  1. A0引脚连接是否松动");
+            Serial.println("  2. 电位器是否损坏");
+            Serial.println("  3. 线路是否有干扰");
+            Serial.println("  4. 尝试重新连接电位器");
+        }
+    }
+
+    // 3. EMG测试
+    Serial.println("\nEMG传感器测试:");
+    float emgSum = 0;
+    for (int i = 0; i < 5; i++) {
+        float emgVal = analogRead(PIN_EMG);
+        emgSum += emgVal;
+        Serial.print("EMG读数 ");
+        Serial.print(i+1);
+        Serial.print(": ");
+        Serial.println(emgVal);
+        delay(100);
+    }
+    Serial.print("EMG平均值: ");
+    Serial.println(emgSum / 5.0);
+
+    // 4. IMU测试
+    Serial.println("\nIMU传感器测试:");
+    float x, y, z;
+    if (IMU.readAcceleration(x, y, z)) {
+        Serial.print("加速度计: X=");
+        Serial.print(x, 3);
+        Serial.print(", Y=");
+        Serial.print(y, 3);
+        Serial.print(", Z=");
+        Serial.println(z, 3);
+    } else {
+        Serial.println("❌ IMU读取失败");
+    }
+
+    Serial.println("=== 硬件诊断完成 ===");
+    Serial.println("💡 如果发现问题，请检查硬件连接或发送 DIAGNOSE 命令重新测试");
 }
