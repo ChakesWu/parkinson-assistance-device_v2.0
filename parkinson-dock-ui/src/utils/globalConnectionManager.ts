@@ -1,5 +1,5 @@
 // 全局连接管理器 - 支持跨页面连接状态共享
-import { BluetoothManager, SensorData, AIResult } from './bluetoothManager';
+import { BluetoothManager, SensorData, AIResult, SpeechResult } from './bluetoothManager';
 
 export interface ConnectionState {
   isConnected: boolean;
@@ -11,6 +11,7 @@ export interface ConnectionState {
 export interface GlobalConnectionManagerOptions {
   onDataReceived?: (data: SensorData) => void;
   onAIResultReceived?: (result: AIResult) => void;
+  onSpeechResultReceived?: (result: SpeechResult) => void;
   onConnectionStateChanged?: (state: ConnectionState) => void;
 }
 
@@ -73,6 +74,11 @@ export class GlobalConnectionManager {
       this.broadcastMessage('aiResultReceived', result);
     };
 
+    this.bluetoothManager.onSpeechResultReceived = (result: SpeechResult) => {
+      this.callbacks.onSpeechResultReceived?.(result);
+      this.broadcastMessage('speechResultReceived', result);
+    };
+
     this.bluetoothManager.onConnectionStatusChanged = (connected: boolean, type: string) => {
       if (connected) {
         this.updateConnectionState({
@@ -108,6 +114,9 @@ export class GlobalConnectionManager {
               break;
             case 'aiResultReceived':
               this.callbacks.onAIResultReceived?.(payload);
+              break;
+            case 'speechResultReceived':
+              this.callbacks.onSpeechResultReceived?.(payload);
               break;
             case 'requestConnectionState':
               this.broadcastMessage('connectionStateResponse', this.connectionState);

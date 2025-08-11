@@ -4,13 +4,13 @@ import { motion } from "motion/react";
 
 const testimonials = [
   {
-    text: "自從爸爸開始使用這個系統後，我們能更好地了解他的病情變化。每天的數據記錄讓我們安心，也讓醫生能給出更精準的治療建議。",
+    text: "未來如果能用上這個系統，那麽我們能更好地了解他的病情變化。每天的數據記錄也會讓我們安心，也讓醫生能給出更精準的治療建議。",
     image: "https://images.unsplash.com/photo-1494790108755-2616b612b786?w=150&h=150&fit=crop&crop=face",
     name: "Sarah Johnson",
     role: "患者家屬",
   },
   {
-    text: "我希望有一天能重新拿起畫筆，畫出美麗的風景。這個系統讓我看到了希望，每天的訓練都讓我感覺離夢想更近一步。",
+    text: "我希望有一天能重新拿起畫筆，畫出美麗的風景。這個系統讓我看到了感覺離夢想更近一步。",
     image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face",
     name: "Michael Thompson",
     role: "帕金森患者",
@@ -42,8 +42,8 @@ const testimonials = [
   {
     text: "這個系統讓我們能夠24小時關注媽媽的狀況，即使我們不在身邊也能安心。科技真的改變了我們的生活。",
     image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&h=150&fit=crop&crop=face",
-    name: "Kevin Brown",
-    role: "患者兒子",
+    name: "Nanse Brown",
+    role: "患者女兒",
   },
   {
     text: "我希望能重新拿起針線，為家人縫製衣服。每一次的訓練都讓我感到手指更加靈活，我相信這個夢想會實現。",

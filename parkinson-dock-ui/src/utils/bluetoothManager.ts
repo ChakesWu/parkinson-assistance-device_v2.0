@@ -18,6 +18,16 @@ export interface AIResult {
   recommendedResistance?: number;
 }
 
+export interface SpeechResult {
+  speechClass: number;
+  probability: number;
+  jitter: number;
+  shimmer: number;
+  hnr: number;
+  silenceRatio: number;
+  voiceActivity: number;
+}
+
 export class BluetoothManager {
   private device: BluetoothDevice | null = null;
   private server: BluetoothRemoteGATTServer | null = null;
@@ -25,6 +35,7 @@ export class BluetoothManager {
   private sensorDataCharacteristic: BluetoothRemoteGATTCharacteristic | null = null;
   private commandCharacteristic: BluetoothRemoteGATTCharacteristic | null = null;
   private aiResultCharacteristic: BluetoothRemoteGATTCharacteristic | null = null;
+  private speechDataCharacteristic: BluetoothRemoteGATTCharacteristic | null = null;
   private isConnected: boolean = false;
 
   // 存储最新的传感器数据，用于AI分析记录
@@ -41,9 +52,11 @@ export class BluetoothManager {
   private readonly SENSOR_DATA_UUID = '12345678-1234-1234-1234-123456789abd';
   private readonly COMMAND_UUID = '12345678-1234-1234-1234-123456789abe';
   private readonly AI_RESULT_UUID = '12345678-1234-1234-1234-123456789abf';
+  private readonly SPEECH_DATA_UUID = '12345678-1234-1234-1234-123456789ac0';
 
   public onDataReceived: ((data: SensorData) => void) | null = null;
   public onAIResultReceived: ((result: AIResult) => void) | null = null;
+  public onSpeechResultReceived: ((result: SpeechResult) => void) | null = null;
   public onConnectionStatusChanged: ((connected: boolean, type: string) => void) | null = null;
 
   // 检查浏览器是否支持Web Bluetooth API
@@ -59,6 +72,7 @@ export class BluetoothManager {
       // 请求设备
       this.device = await navigator.bluetooth.requestDevice({
         filters: [
+          { name: 'ParkinsonDevice_Speech_v2' },
           { name: 'ParkinsonDevice_v2' },
           { namePrefix: 'ParkinsonDevice' }
         ],
@@ -95,6 +109,10 @@ export class BluetoothManager {
         console.log('获取AI结果特征值...');
         this.aiResultCharacteristic = await this.service.getCharacteristic(this.AI_RESULT_UUID);
         console.log('AI结果特征值获取成功');
+
+        console.log('获取语音数据特征值...');
+        this.speechDataCharacteristic = await this.service.getCharacteristic(this.SPEECH_DATA_UUID);
+        console.log('语音数据特征值获取成功');
       } catch (charError) {
         console.error('获取特征值失败:', charError);
 
@@ -120,6 +138,10 @@ export class BluetoothManager {
       await this.aiResultCharacteristic.startNotifications();
       this.aiResultCharacteristic.addEventListener('characteristicvaluechanged', this.handleAIResult.bind(this));
 
+      // 订阅语音数据通知
+      await this.speechDataCharacteristic.startNotifications();
+      this.speechDataCharacteristic.addEventListener('characteristicvaluechanged', this.handleSpeechResult.bind(this));
+
       this.isConnected = true;
       console.log('✅ 蓝牙连接成功!');
       console.log('设备信息:', {
@@ -131,7 +153,8 @@ export class BluetoothManager {
         service: !!this.service,
         sensorData: !!this.sensorDataCharacteristic,
         command: !!this.commandCharacteristic,
-        aiResult: !!this.aiResultCharacteristic
+        aiResult: !!this.aiResultCharacteristic,
+        speechData: !!this.speechDataCharacteristic
       });
 
       if (this.onConnectionStatusChanged) {
@@ -409,6 +432,77 @@ export class BluetoothManager {
       console.log('蓝牙AI分析记录已保存:', record);
     } catch (error) {
       console.error('保存蓝牙AI分析记录失败:', error);
+    }
+  }
+
+  // 处理语音分析结果
+  private handleSpeechResult(event: Event): void {
+    const target = event.target as BluetoothRemoteGATTCharacteristic;
+    const value = target.value;
+    if (!value) {
+      console.warn('收到空的语音分析数据');
+      return;
+    }
+
+    const decoder = new TextDecoder();
+    const speechData = decoder.decode(value);
+
+    console.log('🎤 收到BLE语音分析结果:', speechData);
+
+    try {
+      // 解析语音结果格式: "SPEECH:1;PROB:0.72;JITTER:0.0175;SHIMMER:0.0465;HNR:16.2;SILENCE:0.275;ACTIVITY:0.195"
+      const result: SpeechResult = {
+        speechClass: 0,
+        probability: 0,
+        jitter: 0,
+        shimmer: 0,
+        hnr: 0,
+        silenceRatio: 0,
+        voiceActivity: 0
+      };
+
+      const speechMatch = speechData.match(/SPEECH:(\d+)/);
+      if (speechMatch) {
+        result.speechClass = parseInt(speechMatch[1]);
+      }
+
+      const probMatch = speechData.match(/PROB:([\d.]+)/);
+      if (probMatch) {
+        result.probability = parseFloat(probMatch[1]);
+      }
+
+      const jitterMatch = speechData.match(/JITTER:([\d.]+)/);
+      if (jitterMatch) {
+        result.jitter = parseFloat(jitterMatch[1]);
+      }
+
+      const shimmerMatch = speechData.match(/SHIMMER:([\d.]+)/);
+      if (shimmerMatch) {
+        result.shimmer = parseFloat(shimmerMatch[1]);
+      }
+
+      const hnrMatch = speechData.match(/HNR:([\d.]+)/);
+      if (hnrMatch) {
+        result.hnr = parseFloat(hnrMatch[1]);
+      }
+
+      const silenceMatch = speechData.match(/SILENCE:([\d.]+)/);
+      if (silenceMatch) {
+        result.silenceRatio = parseFloat(silenceMatch[1]);
+      }
+
+      const activityMatch = speechData.match(/ACTIVITY:([\d.]+)/);
+      if (activityMatch) {
+        result.voiceActivity = parseFloat(activityMatch[1]);
+      }
+
+      console.log('解析语音分析结果:', result);
+
+      if (this.onSpeechResultReceived) {
+        this.onSpeechResultReceived(result);
+      }
+    } catch (error) {
+      console.error('解析语音分析结果失败:', error);
     }
   }
 

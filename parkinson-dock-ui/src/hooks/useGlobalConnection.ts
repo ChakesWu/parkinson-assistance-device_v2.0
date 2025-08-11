@@ -1,11 +1,12 @@
 // React Hook for Global Connection Management
 import { useState, useEffect, useCallback } from 'react';
 import { GlobalConnectionManager, ConnectionState } from '@/utils/globalConnectionManager';
-import { SensorData, AIResult } from '@/utils/bluetoothManager';
+import { SensorData, AIResult, SpeechResult } from '@/utils/bluetoothManager';
 
 export interface UseGlobalConnectionOptions {
   onDataReceived?: (data: SensorData) => void;
   onAIResultReceived?: (result: AIResult) => void;
+  onSpeechResultReceived?: (result: SpeechResult) => void;
   autoRequestState?: boolean; // 是否自动请求其他页面的连接状态
 }
 
@@ -97,6 +98,7 @@ export function useGlobalConnection(options: UseGlobalConnectionOptions = {}): U
       manager.setCallbacks({
         onDataReceived: options.onDataReceived,
         onAIResultReceived: options.onAIResultReceived,
+        onSpeechResultReceived: options.onSpeechResultReceived,
         onConnectionStateChanged: (state: ConnectionState) => {
           setConnectionState(state);
           setIsConnecting(false);
@@ -106,7 +108,7 @@ export function useGlobalConnection(options: UseGlobalConnectionOptions = {}): U
     } catch (error) {
       console.error('Failed to update callbacks:', error);
     }
-  }, [options.onDataReceived, options.onAIResultReceived]);
+  }, [options.onDataReceived, options.onAIResultReceived, options.onSpeechResultReceived]);
 
   // 蓝牙连接
   const connectBluetooth = useCallback(async () => {

@@ -4,9 +4,9 @@ import SimpleHand3D from '@/components/device/SimpleHand3D';
 import GlobalConnector from '@/components/device/GlobalConnector';
 import { useConnectionState } from '@/hooks/useGlobalConnection';
 import { SensorData } from '@/utils/bluetoothManager';
-import { Sidebar, SidebarBody, SidebarLink } from "@/components/ui/sidebar";
+
 import { AnimatedDock } from "@/components/ui/animated-dock";
-import { LayoutDashboard, Bug, Settings, MousePointer, Move3d, User, Home, Activity, Book, Brain } from 'lucide-react';
+import { Home, Activity, Book, Brain, Settings, MousePointer, Move3d } from 'lucide-react';
 import { useState } from 'react';
 import Link from "next/link";
 import { motion } from "framer-motion";
@@ -25,7 +25,8 @@ interface SensorDataForDisplay {
 export default function DevicePage() {
   const [sensorData, setSensorData] = useState<any>(null);
   const [controlMode, setControlMode] = useState<'mouse' | 'imu'>('mouse');
-  const [open, setOpen] = useState(false);
+
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'debug' | 'settings' | 'monitor' | 'analysis'>('dashboard');
 
   const handleDataReceived = (data: Partial<SensorData>) => {
     console.log('🔄 Device page received sensor data:', data);
@@ -52,29 +53,7 @@ export default function DevicePage() {
     }
   };
 
-  const links = [
-    {
-      label: "數據台",
-      href: "/device",
-      icon: (
-        <LayoutDashboard className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-      ),
-    },
-    {
-      label: "調試信息",
-      href: "/debug",
-      icon: (
-        <Bug className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-      ),
-    },
-    {
-      label: "設置",
-      href: "/settings",
-      icon: (
-        <Settings className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-      ),
-    },
-  ];
+
 
   const dockItems = [
     {
@@ -135,35 +114,7 @@ export default function DevicePage() {
   };
 
   return (
-    <div
-      className={cn(
-        "rounded-md flex flex-col md:flex-row bg-gray-100 dark:bg-neutral-800 w-full flex-1 mx-auto border border-neutral-200 dark:border-neutral-700 overflow-hidden",
-        "h-screen"
-      )}
-    >
-      <Sidebar open={open} setOpen={setOpen}>
-        <SidebarBody className="justify-between gap-10">
-          <div className="flex flex-col flex-1 overflow-y-auto overflow-x-hidden">
-            {open ? <Logo /> : <LogoIcon />}
-            <div className="mt-8 flex flex-col gap-2">
-              {links.map((link, idx) => (
-                <SidebarLink key={idx} link={link} />
-              ))}
-            </div>
-          </div>
-          <div>
-            <SidebarLink
-              link={{
-                label: "Admin",
-                href: "#",
-                icon: (
-                  <User className="h-7 w-7 flex-shrink-0 rounded-full text-neutral-700 dark:text-neutral-200" />
-                ),
-              }}
-            />
-          </div>
-        </SidebarBody>
-      </Sidebar>
+    <div className="min-h-screen bg-gray-50 dark:bg-neutral-900">
       <Dashboard
         sensorData={sensorData}
         controlMode={controlMode}
@@ -179,34 +130,7 @@ export default function DevicePage() {
   );
 }
 
-export const Logo = () => {
-  return (
-    <Link
-      href="#"
-      className="font-normal flex space-x-2 items-center text-sm text-black py-1 relative z-20"
-    >
-      <div className="h-5 w-6 bg-black dark:bg-white rounded-br-lg rounded-tr-sm rounded-tl-lg rounded-bl-sm flex-shrink-0" />
-      <motion.span
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="font-medium text-black dark:text-white whitespace-pre"
-      >
-        帕金森輔助設備
-      </motion.span>
-    </Link>
-  );
-};
 
-export const LogoIcon = () => {
-  return (
-    <Link
-      href="#"
-      className="font-normal flex space-x-2 items-center text-sm text-black py-1 relative z-20"
-    >
-      <div className="h-5 w-6 bg-black dark:bg-white rounded-br-lg rounded-tr-sm rounded-tl-lg rounded-bl-sm flex-shrink-0" />
-    </Link>
-  );
-};
 
 // Dashboard component with all original device functionality
 const Dashboard = ({
@@ -231,8 +155,8 @@ const Dashboard = ({
   testSensorData: () => void;
 }) => {
   return (
-    <div className="flex flex-1 relative">
-      <div className="p-2 md:p-6 rounded-tl-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 flex flex-col gap-4 flex-1 w-full h-full overflow-y-auto">
+    <div className="min-h-screen relative">
+      <div className="container mx-auto py-6 px-4 flex flex-col gap-6">
         <div className="flex justify-between items-center">
           <h1 className="text-2xl font-bold">數據台</h1>
           <div className="flex items-center gap-4">
