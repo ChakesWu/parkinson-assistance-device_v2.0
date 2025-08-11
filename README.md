@@ -236,7 +236,6 @@ python -c "from python.deployment.model_quantization import *; main()"
 
 > **重要提醒：本裝置僅作輔助評估與訓練，不能取代專業醫療診斷。使用前請諮詢醫療專業人員。**
 
----
 
-如果你有其他排版偏好或希望突出某些內容，請再告訴我！
+
 
