@@ -170,5 +170,4 @@ export function useLightweightConnection() {
   return state;
 }
 
-// 导出Hook供React组件使用
-export { useLightweightConnection };
+// 导出Hook供React组件使用（已采用命名导出，不再重复导出）

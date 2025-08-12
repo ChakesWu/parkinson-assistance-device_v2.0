@@ -19,7 +19,8 @@ export interface UnifiedConnectorProps {
 type ConnectionMode = 'serial' | 'bluetooth';
 
 export default function UnifiedConnector({ onDataReceived }: UnifiedConnectorProps) {
-  const [connectionMode, setConnectionMode] = useState<ConnectionMode>('serial');
+  // 默认改为蓝牙，适配 Android Chrome 移动端
+  const [connectionMode, setConnectionMode] = useState<ConnectionMode>('bluetooth');
   const [isAnyConnected, setIsAnyConnected] = useState(false);
   const [browserSupport, setBrowserSupport] = useState({
     serial: false,

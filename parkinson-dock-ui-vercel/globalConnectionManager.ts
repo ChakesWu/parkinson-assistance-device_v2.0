@@ -1,0 +1,461 @@
+// 全局连接管理器 - 支持跨页面连接状态共享
+import { BluetoothManager, SensorData, AIResult, SpeechResult } from './bluetoothManager';
+
+export interface ConnectionState {
+  isConnected: boolean;
+  connectionType: 'serial' | 'bluetooth' | null;
+  deviceName: string | null;
+  lastUpdate: number;
+}
+
+export interface GlobalConnectionManagerOptions {
+  onDataReceived?: (data: SensorData) => void;
+  onAIResultReceived?: (result: AIResult) => void;
+  onSpeechResultReceived?: (result: SpeechResult) => void;
+  onConnectionStateChanged?: (state: ConnectionState) => void;
+}
+
+export interface PotentiometerSettings {
+  reversed: boolean;
+  maxBendValue: number;
+}
+
+export class GlobalConnectionManager {
+  private static instance: GlobalConnectionManager | null = null;
+  private bluetoothManager: BluetoothManager;
+  private serialPort: SerialPort | null = null;
+  private serialReader: ReadableStreamDefaultReader | null = null;
+  private serialWriter: WritableStreamDefaultWriter | null = null;
+  private broadcastChannel: BroadcastChannel;
+  private connectionState: ConnectionState;
+  private callbacks: GlobalConnectionManagerOptions = {};
+  private readBufferRef: string = '';
+
+  // Potentiometer settings
+  private potentiometerSettings: PotentiometerSettings = {
+    reversed: false,
+    maxBendValue: 200
+  };
+
+  private constructor() {
+    try {
+      this.bluetoothManager = new BluetoothManager();
+      this.broadcastChannel = new BroadcastChannel('parkinson-device-connection');
+      this.connectionState = {
+        isConnected: false,
+        connectionType: null,
+        deviceName: null,
+        lastUpdate: Date.now()
+      };
+
+      this.setupBluetoothCallbacks();
+      this.setupBroadcastChannel();
+      this.loadConnectionState();
+    } catch (error) {
+      console.error('Failed to initialize GlobalConnectionManager:', error);
+      // 设置默认状态，避免阻塞
+      this.connectionState = {
+        isConnected: false,
+        connectionType: null,
+        deviceName: null,
+        lastUpdate: Date.now()
+      };
+    }
+  }
+
+  public static getInstance(): GlobalConnectionManager {
+    if (!GlobalConnectionManager.instance) {
+      GlobalConnectionManager.instance = new GlobalConnectionManager();
+    }
+    return GlobalConnectionManager.instance;
+  }
+
+  public setCallbacks(options: GlobalConnectionManagerOptions) {
+    this.callbacks = { ...this.callbacks, ...options };
+  }
+
+  private setupBluetoothCallbacks() {
+    this.bluetoothManager.onDataReceived = (data: SensorData) => {
+      // 調整手指數據方向
+      const adjustedData = {
+        ...data,
+        fingers: this.adjustFingerDirection(data.fingers)
+      };
+
+      this.callbacks.onDataReceived?.(adjustedData);
+      this.broadcastMessage('dataReceived', adjustedData);
+    };
+
+    this.bluetoothManager.onAIResultReceived = (result: AIResult) => {
+      this.callbacks.onAIResultReceived?.(result);
+      this.broadcastMessage('aiResultReceived', result);
+    };
+
+    this.bluetoothManager.onSpeechResultReceived = (result: SpeechResult) => {
+      this.callbacks.onSpeechResultReceived?.(result);
+      this.broadcastMessage('speechResultReceived', result);
+    };
+
+    this.bluetoothManager.onConnectionStatusChanged = (connected: boolean, type: string) => {
+      if (connected) {
+        this.updateConnectionState({
+          isConnected: true,
+          connectionType: 'bluetooth',
+          deviceName: this.bluetoothManager.getConnectionStatus().deviceName,
+          lastUpdate: Date.now()
+        });
+      } else {
+        this.updateConnectionState({
+          isConnected: false,
+          connectionType: null,
+          deviceName: null,
+          lastUpdate: Date.now()
+        });
+      }
+    };
+  }
+
+  private setupBroadcastChannel() {
+    try {
+      this.broadcastChannel.addEventListener('message', (event) => {
+        try {
+          const { type, payload } = event.data;
+
+          switch (type) {
+            case 'connectionStateChanged':
+              this.connectionState = payload;
+              this.callbacks.onConnectionStateChanged?.(payload);
+              break;
+            case 'dataReceived':
+              this.callbacks.onDataReceived?.(payload);
+              break;
+            case 'aiResultReceived':
+              this.callbacks.onAIResultReceived?.(payload);
+              break;
+            case 'speechResultReceived':
+              this.callbacks.onSpeechResultReceived?.(payload);
+              break;
+            case 'requestConnectionState':
+              this.broadcastMessage('connectionStateResponse', this.connectionState);
+              break;
+          }
+        } catch (error) {
+          console.error('Error handling broadcast message:', error);
+        }
+      });
+    } catch (error) {
+      console.error('Failed to setup broadcast channel:', error);
+    }
+  }
+
+  private broadcastMessage(type: string, payload: any) {
+    this.broadcastChannel.postMessage({ type, payload });
+  }
+
+  private updateConnectionState(newState: ConnectionState) {
+    this.connectionState = newState;
+    this.saveConnectionState();
+    this.callbacks.onConnectionStateChanged?.(newState);
+    this.broadcastMessage('connectionStateChanged', newState);
+  }
+
+  private saveConnectionState() {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      localStorage.setItem('parkinson-connection-state', JSON.stringify(this.connectionState));
+    }
+  }
+
+  private loadConnectionState() {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const saved = localStorage.getItem('parkinson-connection-state');
+        if (saved) {
+          const state = JSON.parse(saved);
+          // 检查状态是否过期（5分钟）
+          if (Date.now() - state.lastUpdate < 5 * 60 * 1000) {
+            this.connectionState = state;
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load connection state:', error);
+    }
+  }
+
+  // 蓝牙连接方法
+  public async connectBluetooth(): Promise<void> {
+    if (this.connectionState.isConnected && this.connectionState.connectionType === 'bluetooth') {
+      console.log('Bluetooth already connected');
+      return;
+    }
+
+    await this.disconnect(); // 断开现有连接
+
+    // 设置蓝牙回调函数
+    this.setupBluetoothCallbacks();
+
+    await this.bluetoothManager.connect();
+  }
+
+  // 串口连接方法
+  public async connectSerial(): Promise<void> {
+    if (this.connectionState.isConnected && this.connectionState.connectionType === 'serial') {
+      console.log('Serial already connected');
+      return;
+    }
+
+    await this.disconnect(); // 断开现有连接
+
+    if (!('serial' in navigator)) {
+      throw new Error('Web Serial API not supported');
+    }
+
+    try {
+      this.serialPort = await (navigator as any).serial.requestPort();
+      await this.serialPort.open({ baudRate: 115200 });
+
+      // 设置读取器
+      const textDecoder = new TextDecoderStream();
+      this.serialPort.readable.pipeTo(textDecoder.writable);
+      this.serialReader = textDecoder.readable.getReader();
+
+      // 设置写入器
+      const textEncoder = new TextEncoderStream();
+      textEncoder.readable.pipeTo(this.serialPort.writable);
+      this.serialWriter = textEncoder.writable.getWriter();
+
+      // 开始读取数据
+      this.startSerialDataReading();
+
+      this.updateConnectionState({
+        isConnected: true,
+        connectionType: 'serial',
+        deviceName: 'Arduino (Serial)',
+        lastUpdate: Date.now()
+      });
+
+    } catch (error) {
+      await this.disconnect();
+      throw error;
+    }
+  }
+
+  private async startSerialDataReading() {
+    if (!this.serialReader) return;
+
+    try {
+      while (this.connectionState.isConnected && this.connectionState.connectionType === 'serial') {
+        const { value, done } = await this.serialReader.read();
+        if (done) break;
+
+        if (value) {
+          this.readBufferRef += value;
+          const lines = this.readBufferRef.split('\n');
+          this.readBufferRef = lines.pop() || '';
+
+          for (const line of lines) {
+            this.parseSerialData(line.trim());
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Serial reading error:', error);
+      await this.disconnect();
+    }
+  }
+
+  private parseSerialData(line: string) {
+    if (!line) return;
+
+    // 解析DATA格式的传感器数据
+    if (line.startsWith('DATA,')) {
+      const parts = line.substring(5).split(',');
+      const values = parts.map(v => parseFloat(v));
+
+      if (values.length >= 15) {
+        // 調整手指數據方向
+        const adjustedFingers = this.adjustFingerDirection(values.slice(0, 5));
+
+        const data: SensorData = {
+          fingers: adjustedFingers,
+          accel: { x: values[6], y: values[7], z: values[8] },
+          gyro: { x: values[9], y: values[10], z: values[11] },
+          mag: { x: values[12], y: values[13], z: values[14] },
+          emg: values[5]
+        };
+
+        this.callbacks.onDataReceived?.(data);
+        this.broadcastMessage('dataReceived', data);
+      }
+    }
+
+    // 解析AI结果
+    if (line.startsWith('AI:')) {
+      const parts = line.substring(3).split(',');
+      if (parts.length >= 3) {
+        const result: AIResult = {
+          parkinsonLevel: parseInt(parts[0]),
+          confidence: parseFloat(parts[1]),
+          analysisCount: parseInt(parts[2])
+        };
+
+        this.callbacks.onAIResultReceived?.(result);
+        this.broadcastMessage('aiResultReceived', result);
+      }
+    }
+
+    // 解析語音分析結果 SPEECH
+    if (line.startsWith('SPEECH:')) {
+      try {
+        // 格式: SPEECH:1;PROB:0.750;JITTER:0.0123;SHIMMER:0.0456;HNR:15.2;SILENCE:0.123;ACTIVITY:0.876
+        const parts = line.split(';');
+        const result = {
+          speechClass: parseInt(parts[0].split(':')[1] || '0'),
+          probability: parseFloat(parts[1].split(':')[1] || '0'),
+          jitter: parseFloat(parts[2].split(':')[1] || '0'),
+          shimmer: parseFloat(parts[3].split(':')[1] || '0'),
+          hnr: parseFloat(parts[4].split(':')[1] || '0'),
+          silenceRatio: parseFloat(parts[5].split(':')[1] || '0'),
+          voiceActivity: parseFloat(parts[6].split(':')[1] || '0')
+        } as SpeechResult;
+
+        this.callbacks.onSpeechResultReceived?.(result);
+        this.broadcastMessage('speechResultReceived', result);
+      } catch (error) {
+        console.error('Failed to parse serial speech result:', error);
+      }
+    }
+    // 兼容無逗號的 DATA 格式（Arduino使用 "DATA" 開頭且逗號從第一個值開始）
+    if (line.startsWith('DATA')) {
+      const payload = line.startsWith('DATA,') ? line.substring(5) : line.substring(4).replace(/^,/, '');
+      const parts = payload.split(',');
+      const nums = parts.map(v => parseFloat(v));
+      if (nums.length >= 15) {
+        const adjustedFingers = this.adjustFingerDirection(nums.slice(0, 5));
+        const data: SensorData = {
+          fingers: adjustedFingers,
+          accel: { x: nums[6], y: nums[7], z: nums[8] },
+          gyro: { x: nums[9], y: nums[10], z: nums[11] },
+          mag: { x: nums[12], y: nums[13], z: nums[14] },
+          emg: nums[5]
+        };
+        this.callbacks.onDataReceived?.(data);
+        this.broadcastMessage('dataReceived', data);
+      }
+    }
+  }
+
+  // 发送命令
+  public async sendCommand(command: string): Promise<void> {
+    if (!this.connectionState.isConnected) {
+      throw new Error('No device connected');
+    }
+
+    if (this.connectionState.connectionType === 'bluetooth') {
+      await this.bluetoothManager.sendCommand(command);
+    } else if (this.connectionState.connectionType === 'serial' && this.serialWriter) {
+      const encoder = new TextEncoder();
+      await this.serialWriter.write(encoder.encode(command + '\n'));
+    } else {
+      throw new Error('Invalid connection type');
+    }
+  }
+
+  // 断开连接
+  public async disconnect(): Promise<void> {
+    try {
+      // 断开蓝牙
+      if (this.bluetoothManager.getConnectionStatus().isConnected) {
+        await this.bluetoothManager.disconnect();
+      }
+
+      // 断开串口
+      if (this.serialReader) {
+        await this.serialReader.cancel();
+        this.serialReader = null;
+      }
+      if (this.serialWriter) {
+        await this.serialWriter.close();
+        this.serialWriter = null;
+      }
+      if (this.serialPort) {
+        await this.serialPort.close();
+        this.serialPort = null;
+      }
+
+    } catch (error) {
+      console.error('Disconnect error:', error);
+    } finally {
+      this.updateConnectionState({
+        isConnected: false,
+        connectionType: null,
+        deviceName: null,
+        lastUpdate: Date.now()
+      });
+    }
+  }
+
+  // 获取连接状态
+  public getConnectionState(): ConnectionState {
+    return { ...this.connectionState };
+  }
+
+  // 检查浏览器支持
+  public getBrowserSupport() {
+    if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+      return {
+        serial: false,
+        bluetooth: false
+      };
+    }
+    return {
+      serial: 'serial' in navigator,
+      bluetooth: 'bluetooth' in navigator
+    };
+  }
+
+  // 请求其他页面的连接状态
+  public requestConnectionState() {
+    this.broadcastMessage('requestConnectionState', null);
+  }
+
+  // 設置電位器參數
+  public setPotentiometerSettings(settings: Partial<PotentiometerSettings>) {
+    this.potentiometerSettings = {
+      ...this.potentiometerSettings,
+      ...settings
+    };
+  }
+
+  // 獲取電位器設置
+  public getPotentiometerSettings(): PotentiometerSettings {
+    return { ...this.potentiometerSettings };
+  }
+
+  // 調整手指方向 - 處理電位器反向
+  private adjustFingerDirection(fingerData: number[]): number[] {
+    return fingerData.map((value, index) => {
+      let adjustedValue = value;
+
+      // 如果設置為反向電位器，將彎曲度反轉
+      if (this.potentiometerSettings.reversed) {
+        // 反轉公式：新值 = 最大值 - 原值
+        adjustedValue = Math.max(0, this.potentiometerSettings.maxBendValue - value);
+      }
+
+      // 小拇指敏感度增強 (index 4 是小拇指)
+      if (index === 4) {
+        return adjustedValue * 1.5; // 增加50%敏感度
+      }
+
+      return adjustedValue;
+    });
+  }
+
+  // 清理资源
+  public destroy() {
+    this.disconnect();
+    this.broadcastChannel.close();
+    GlobalConnectionManager.instance = null;
+  }
+}

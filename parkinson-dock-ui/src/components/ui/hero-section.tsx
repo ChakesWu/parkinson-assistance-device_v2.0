@@ -138,7 +138,8 @@ const HeroSection = React.forwardRef<HTMLDivElement, HeroSectionProps>(
               className="m-0 mb-5 font-black tracking-tight text-[#0B0B0B] break-words max-w-full"
               style={{
                 fontSize: "clamp(60px, 4.2vw, 80px)",
-                lineHeight: 0.98,
+                lineHeight: 1.25,
+                fontFamily: "'PingFang SC','Hiragino Sans GB','Microsoft YaHei','Source Han Sans SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif",
                 textShadow: "0 4px 8px rgba(0,0,0,0.10)",
               }}
             >
