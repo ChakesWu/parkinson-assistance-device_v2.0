@@ -39,23 +39,26 @@ export default function HomePage() {
 
       <div className="min-h-screen">
         <HeroSection
-          title="欢迎使用帕金森辅助系统"
+          title=""
+          topHref="/about"
           subtitle={{
-            regular: "",
-            gradient: "基于LSTM和CNN的混合模型的帕金森手部训练设计",
+            regular: "基于LSTM和CNN的\n混合模型的帕金森手部\n训练设计",
+            gradient: "",
           }}
-          description="利用我们全面的开发工具和资源，帮助您更好地管理和治疗帕金森病。"
+          description=""
           ctaText="开始使用"
           ctaHref="/device"
-          bottomComponent={<AnimatedCardDemo />}
-          gridOptions={{
-            angle: 65,
-            opacity: 0.4,
-            cellSize: 60,
-            lightLineColor: "#4a4a4a",
-            darkLineColor: "#2a2a2a",
-          }}
+          backgroundImageUrl="/ai_model/Replicate-Web-Page.png"
+          gridOptions={{ angle: 65, opacity: 0.0, cellSize: 60 }}
         />
+
+        {/* 年度帕金森趋势分析（上移与蓝色区域轻微重合，不遮挡患者心声） */}
+        <section className="relative z-10 -mt-16 md:-mt-24 max-w-screen-xl mx-auto px-6 md:px-10 pb-12 md:pb-16">
+          {/* 动态树状图（使用 AnimatedCardDemo，不遮挡患者心声） */}
+          <div className="w-full flex items-center justify-center">
+            <AnimatedCardDemo />
+          </div>
+        </section>
         
         {/* 使用新的动画 Dock */}
         <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50">

@@ -6,8 +6,10 @@ import { AnimatedDock } from "@/components/ui/animated-dock";
 import { BrainCircuit, Home, Activity, Book, Settings, Brain } from 'lucide-react';
 import { getRecommendations, classifySeverity } from '@/lib/ai/recommendations';
 import { analysisRecordService } from '@/services/analysisRecordService';
+import { Sidebar, SidebarBody, SidebarLink, useSidebar } from "@/components/ui/sidebar";
+import { useGlobalConnection } from '@/hooks/useGlobalConnection';
+import { SPEECH_ANALYSIS_CONFIG } from "@/lib/speech-analysis-config";
 
-type SerialPortLike = any;
 
 export default function AIAnalysisPage() {
   const [prediction, setPrediction] = useState<number | null>(null);
@@ -28,12 +30,33 @@ export default function AIAnalysisPage() {
   const [groups, setGroups] = useState<ReturnType<typeof getRecommendations>>([]);
 
   // 連線/採集狀態
-  const [isConnected, setIsConnected] = useState(false);
   const [isCollecting, setIsCollecting] = useState(false);
-  const portRef = useRef<SerialPortLike | null>(null);
-  const readerRef = useRef<ReadableStreamDefaultReader<string> | null>(null);
-  const writerRef = useRef<WritableStreamDefaultWriter<string> | null>(null);
-  const lineBufferRef = useRef<string>('');
+  const isCollectingRef = useRef(false);
+  const { isConnected, connectBluetooth, connectSerial, disconnect, sendCommand } = useGlobalConnection({
+    onDataReceived: (data) => {
+      // 即時顯示
+      const percentFingers = data.fingers.map(v => Math.round((Math.max(0, Math.min(1023, v)) / 1023) * 100));
+      setSensorData({
+        fingerPositions: percentFingers,
+        accelerometer: data.accel,
+        gyroscope: data.gyro,
+        emg: data.emg ?? 0,
+      });
+
+      // 只在採集中累積序列
+      if (isCollectingRef.current) {
+        const now = performance.now();
+        tsSeriesRef.current.push(now);
+        for (let i = 0; i < 5; i++) {
+          fingerSeriesRef.current[i].push(Math.max(0, Math.min(1023, data.fingers[i] ?? 0)));
+        }
+        accelSeriesRef.current.x.push(data.accel.x ?? 0);
+        accelSeriesRef.current.y.push(data.accel.y ?? 0);
+        accelSeriesRef.current.z.push(data.accel.z ?? 0);
+        emgSeriesRef.current.push(data.emg ?? 0);
+      }
+    },
+  });
 
   // 10秒資料緩存
   const sessionStartRef = useRef<number | null>(null);
@@ -50,6 +73,89 @@ export default function AIAnalysisPage() {
     { link: "/ai-analysis", Icon: <Brain size={22} /> },
     { link: "/settings", Icon: <Settings size={22} /> },
   ];
+
+  // 語音識別狀態
+  const [isVoiceAnalyzing, setIsVoiceAnalyzing] = useState(false);
+  const [voiceProgress, setVoiceProgress] = useState(0);
+  const [voiceMessage, setVoiceMessage] = useState<string>("準備開始Arduino語音分析");
+  const [speechResult, setSpeechResult] = useState<{
+    class: number;
+    probability: number;
+    jitter: number;
+    shimmer: number;
+    hnr: number;
+    silenceRatio: number;
+    voiceActivity: number;
+  } | null>(null);
+
+  const startVoiceAnalysis = async () => {
+    try {
+      setIsVoiceAnalyzing(true);
+      setVoiceProgress(0);
+      setVoiceMessage("正在連接Arduino設備...");
+
+      if (!isConnected) {
+        setVoiceMessage('請先連接設備');
+        setIsVoiceAnalyzing(false);
+        return;
+      }
+
+      setVoiceMessage("正在啟動Arduino語音分析...");
+
+      // 發送SPEECH命令給Arduino
+      await sendCommand('SPEECH');
+
+      setVoiceMessage("Arduino正在進行5秒語音採集...");
+
+      // 監聽Arduino的語音分析進度和結果
+      const startTime = performance.now();
+      const speechDuration = 5000; // Arduino設定為5秒
+      const progressInterval = 100;
+
+      const progressTimer = setInterval(() => {
+        const elapsed = performance.now() - startTime;
+        const progress = Math.min(100, (elapsed / speechDuration) * 100);
+        setVoiceProgress(progress);
+
+        if (elapsed < 1000) {
+          setVoiceMessage("Arduino PDM麥克風初始化中...");
+        } else if (elapsed < 2000) {
+          setVoiceMessage("正在採集語音信號...");
+        } else if (elapsed < 4000) {
+          setVoiceMessage("正在分析語音特徵...");
+        } else if (elapsed < speechDuration) {
+          setVoiceMessage("正在計算帕金森症狀指標...");
+        } else {
+          setVoiceMessage("等待Arduino分析結果...");
+        }
+      }, progressInterval);
+
+      // 超時保護
+      setTimeout(() => {
+        setIsVoiceAnalyzing(false);
+        setVoiceMessage('語音分析超時，請重試');
+      }, 10000);
+
+    } catch (err) {
+      console.error('語音分析啟動失敗:', err);
+      setIsVoiceAnalyzing(false);
+      setVoiceMessage("❌ 無法啟動語音分析：" + (err as Error).message);
+    }
+  };
+
+  const cancelVoiceAnalysis = async () => {
+    try {
+      // 發送停止命令給Arduino（如果支援的話）
+      await sendCommand('STOP');
+    } catch (error) {
+      console.log('發送停止命令失敗:', error);
+    }
+
+    setIsVoiceAnalyzing(false);
+    setVoiceProgress(0);
+    setVoiceMessage("已取消語音分析");
+  };
+
 
   // 監聽父頁提供的資料（可選）
   useEffect(() => {
@@ -81,65 +187,8 @@ export default function AIAnalysisPage() {
     };
   }, []);
 
-  // 串口連線
-  const ensureSerialConnected = async () => {
-    if (!('serial' in navigator)) throw new Error('此瀏覽器不支援 Web Serial，請使用 Chrome/Edge');
-
-    // 如果已经连接且端口有效，直接返回
-    if (isConnected && portRef.current && readerRef.current && writerRef.current) {
-      console.log('串口已連接，跳過重新連接');
-      return;
-    }
-
-    console.log('開始建立串口連接...');
-    const port = await (navigator as any).serial.requestPort();
-    await port.open({ baudRate: 9600 }); // 與韌體一致（若你用 115200，請改這裡）
-
-    // 設置解碼器與讀取器
-    const textDecoder = new (window as any).TextDecoderStream();
-    port.readable.pipeTo(textDecoder.writable);
-    const reader = textDecoder.readable.getReader();
-    readerRef.current = reader as any;
-
-    // 設置編碼器與寫入器
-    const textEncoder = new (window as any).TextEncoderStream();
-    textEncoder.readable.pipeTo(port.writable);
-    const writer = textEncoder.writable.getWriter();
-    writerRef.current = writer as any;
-
-    portRef.current = port;
-    setIsConnected(true);
-    console.log('串口連接成功');
-  };
-
-  const closeSerial = async () => {
-    try {
-      if (readerRef.current) {
-        try { await readerRef.current.cancel(); } catch {}
-        readerRef.current = null;
-      }
-      if (writerRef.current) {
-        try { await writerRef.current.close(); } catch {}
-        writerRef.current = null;
-      }
-      if (portRef.current) {
-        try { await portRef.current.close(); } catch {}
-        portRef.current = null;
-      }
-    } finally {
-      setIsConnected(false);
-    }
-  };
-
-  // 手动连接串口
-  const handleManualConnect = async () => {
-    try {
-      await ensureSerialConnected();
-    } catch (error) {
-      console.error('手動連接失敗:', error);
-      alert(`連接失敗: ${error}`);
-    }
-  };
+  // 同步採集旗標
+  useEffect(() => { isCollectingRef.current = isCollecting; }, [isCollecting]);
 
   // 测试记录保存功能
   const testRecordSaving = () => {
@@ -168,16 +217,13 @@ export default function AIAnalysisPage() {
     }
   };
 
-  // 串口寫入命令
-  const sendCommand = async (cmd: string) => {
-    if (!writerRef.current) return;
-    await writerRef.current.write(cmd.endsWith('\n') ? cmd : cmd + '\n');
-  };
+  // 使用全局連接的 sendCommand（已由 useGlobalConnection 提供）
 
   // 解析 DATA 行（支援 16 欄或 10 欄）
   const parseDataLine = (trimmed: string) => {
-    if (!trimmed.startsWith('DATA,')) return null;
-    const parts = trimmed.substring(5).split(',');
+    if (!trimmed.startsWith('DATA')) return null;
+    const payload = trimmed.startsWith('DATA,') ? trimmed.substring(5) : trimmed.substring(4).replace(/^,/, '');
+    const parts = payload.split(',');
     const nums = parts.map(v => parseFloat(v));
     if (nums.length >= 15) {
       const fingers = nums.slice(0, 5).map(v => Math.max(0, Math.min(1023, v)));
@@ -213,56 +259,24 @@ export default function AIAnalysisPage() {
     tsSeriesRef.current = [];
 
     try {
-      await ensureSerialConnected();
-      // 啟動裝置採集
+      // 若尚未連接，提示選擇連接方式
+      if (!isConnected) {
+        alert('請先連接設備（串口或藍牙）');
+        return;
+      }
+      // 啟動裝置採集（兩種連接方式一致）
       await sendCommand('START');
       setIsCollecting(true);
       sessionStartRef.current = performance.now();
-
-      // 讀取 10 秒
-      const deadline = sessionStartRef.current + 10000;
-      while (performance.now() < deadline) {
-        if (!readerRef.current) break;
-        const { value, done } = await readerRef.current.read();
-        if (done) break;
-        if (value) {
-          lineBufferRef.current += value as string;
-          const lines = lineBufferRef.current.split('\n');
-          lineBufferRef.current = lines.pop() ?? '';
-          for (const raw of lines) {
-            const trimmed = raw.trim();
-            if (!trimmed) continue;
-            if (trimmed === 'END') {
-              // 裝置主動結束
-              sessionStartRef.current = sessionStartRef.current ?? performance.now() - 10000;
-              break;
-            }
-            const parsed = parseDataLine(trimmed);
-            if (parsed) {
-              const now = performance.now();
-              tsSeriesRef.current.push(now);
-              for (let i = 0; i < 5; i++) {
-                fingerSeriesRef.current[i].push(parsed.fingers[i] ?? 0);
-              }
-              accelSeriesRef.current.x.push(parsed.accel.x ?? 0);
-              accelSeriesRef.current.y.push(parsed.accel.y ?? 0);
-              accelSeriesRef.current.z.push(parsed.accel.z ?? 0);
-              emgSeriesRef.current.push(parsed.emg ?? 0);
-              // 即時顯示
-              setSensorData({
-                fingerPositions: parsed.fingers.map(v => Math.round((v / 1023) * 100)),
-                accelerometer: parsed.accel,
-                gyroscope: parsed.gyro,
-                emg: parsed.emg ?? 0,
-              });
-            }
-          }
-        }
-      }
+      // 自動在 10 秒後結束採集
+      setTimeout(async () => {
+        try { await sendCommand('STOP'); } catch {}
+        setIsCollecting(false);
+      }, 10000);
     } catch (e) {
       console.error('採集失敗', e);
     } finally {
-      setIsCollecting(false);
+      // 結果計算在下方進行
     }
 
     // 計算結果
@@ -340,8 +354,53 @@ export default function AIAnalysisPage() {
     setIsLoading(false);
   };
 
+  // 側邊欄連結配置
+  const sidebarLinks = [
+    {
+      label: "AI 症狀分析",
+      href: "/ai-analysis",
+      icon: <Brain className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
+    },
+    {
+      label: "語音檢測",
+      href: "/voice-analysis",
+      icon: <Activity className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
+    },
+    {
+      label: "多模態分析",
+      href: "/multimodal-analysis",
+      icon: <Settings className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
+    }
+  ];
+
+  // Logo組件
+  const Logo = () => (
+    <div className="font-normal flex space-x-2 items-center text-sm text-black py-1 relative z-20">
+      <div className="h-6 w-6 bg-blue-600 dark:bg-blue-500 rounded-lg flex-shrink-0 flex items-center justify-center">
+        <Brain className="h-4 w-4 text-white" />
+      </div>
+      <span className="font-medium text-black dark:text-white whitespace-nowrap overflow-hidden text-ellipsis">
+        帕金森輔助設備
+      </span>
+    </div>
+  );
+
+  const LogoIcon = () => (
+    <div className="font-normal flex space-x-2 items-center text-sm text-black py-1 relative z-20">
+      <div className="h-6 w-6 bg-blue-600 dark:bg-blue-500 rounded-lg flex-shrink-0 flex items-center justify-center">
+        <Brain className="h-4 w-4 text-white" />
+      </div>
+    </div>
+  );
+
+  const SidebarHeader: React.FC = () => {
+    const { open } = useSidebar();
+    return open ? <Logo /> : <LogoIcon />;
+  };
+
   // 計算：手指抓握、震顫頻率、EMG 等級與總嚴重度
   const computeFinalAssessment = () => {
+
     const durationSec = Math.max(0.001, (tsSeriesRef.current.at(-1)! - (sessionStartRef.current ?? tsSeriesRef.current[0]!)) / 1000);
 
     // 手指抓握評估：看每指的幅度與循環次數（用閾值過零次數近似）
@@ -417,15 +476,29 @@ export default function AIAnalysisPage() {
     <>
       <div className="min-h-screen bg-gray-50 dark:bg-neutral-900">
         <main className="container mx-auto py-12 px-4">
-          <div className="flex justify-between items-center mb-8">
-          <div className="flex items-center">
-            <BrainCircuit className="h-8 w-8 mr-3 text-blue-600" />
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">AI 症狀分析</h1>
-          </div>
-          <div className="text-sm text-gray-500 dark:text-gray-400">
-            智能帕金森症狀評估系統
-          </div>
-        </div>
+          <div className="flex gap-4 items-stretch">
+            <Sidebar>
+              <SidebarBody>
+                <div className="flex flex-col h-full">
+                  <SidebarHeader />
+                  <div className="mt-4 space-y-1">
+                    {sidebarLinks.map((link, index) => (
+                      <SidebarLink key={index} link={link} />
+                    ))}
+                  </div>
+                </div>
+              </SidebarBody>
+            </Sidebar>
+            <div className="flex-1">
+              <div className="flex justify-between items-center mb-8">
+                <div className="flex items-center">
+                  <BrainCircuit className="h-8 w-8 mr-3 text-blue-600" />
+                  <h1 className="text-3xl font-bold text-gray-900 dark:text-white">AI 症狀分析</h1>
+                </div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">
+                  智能帕金森症狀評估系統
+                </div>
+              </div>
         {/* 結束上方三欄格狀容器 */}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           {/* 设备连接状态卡片 */}
@@ -447,20 +520,12 @@ export default function AIAnalysisPage() {
 
               <div className="flex gap-2">
                 {!isConnected ? (
-                  <Button
-                    onClick={handleManualConnect}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700"
-                  >
-                    連接設備
-                  </Button>
+                  <>
+                    <Button onClick={connectSerial} className="flex-1 bg-blue-600 hover:bg-blue-700">串口連接</Button>
+                    <Button onClick={connectBluetooth} className="flex-1 bg-blue-600 hover:bg-blue-700">藍牙連接</Button>
+                  </>
                 ) : (
-                  <Button
-                    onClick={closeSerial}
-                    variant="outline"
-                    className="flex-1 border-red-500 text-red-500 hover:bg-red-500 hover:text-white"
-                  >
-                    斷開連接
-                  </Button>
+                  <Button onClick={disconnect} variant="outline" className="flex-1 border-red-500 text-red-500 hover:bg-red-500 hover:text-white">斷開連接</Button>
                 )}
               </div>
             </div>
@@ -484,6 +549,8 @@ export default function AIAnalysisPage() {
                 </div>
 
                 <div>
+
+
                   <h3 className="font-medium mb-3 text-gray-700 dark:text-gray-300">加速度計 (g)</h3>
                   <div className="grid grid-cols-3 gap-2">
                     <div className="text-center p-2 bg-gray-50 dark:bg-neutral-700 rounded">
@@ -572,8 +639,10 @@ export default function AIAnalysisPage() {
               )}
           </div>
         </div>
+
         </div>
 
+        {/* 語音識別帕金森 功能已遷移到 /voice-analysis 分頁 */}
 
         {/* 分析结果区域 */}
         {prediction !== null && (
@@ -697,10 +766,11 @@ export default function AIAnalysisPage() {
                 <div className="text-sm text-gray-600 dark:text-gray-400">參數配置</div>
               </div>
             </a>
+            </div>
           </div>
         </div>
-
-        </main>
+        </div>
+      </main>
       </div>
       <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50">
         <AnimatedDock items={dockItems} />

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { BluetoothManager, SensorData, AIResult } from '@/utils/bluetoothManager';
+import { analysisRecordService, AnalysisRecord } from '@/services/analysisRecordService';
 import { analysisRecordService } from '@/services/analysisRecordService';
 
 export interface BluetoothConnectorProps {
@@ -41,6 +42,9 @@ export default function BluetoothConnector({ onDataReceived }: BluetoothConnecto
     isAnalyzing: false
   });
 
+  // 訓練確認彈窗
+  const [showTrainingConfirm, setShowTrainingConfirm] = useState(false);
+
   // 初始化蓝牙管理器
   useEffect(() => {
     bluetoothManagerRef.current = new BluetoothManager();
@@ -54,7 +58,37 @@ export default function BluetoothConnector({ onDataReceived }: BluetoothConnecto
       if (bluetoothManagerRef.current?.getConnectionStatus().isConnected) {
         bluetoothManagerRef.current.disconnect();
       }
+      // 取消订阅分析记录事件
+      unsubscribe?.();
     };
+  }, []);
+
+  // 订阅本地/web分析保存事件：当来源为 web-analysis 时也弹出训练确认
+  const unsubscribeRef = useRef<() => void | null>(null);
+  const unsubscribe = unsubscribeRef.current as (() => void) | null;
+  useEffect(() => {
+    const off = analysisRecordService.subscribe((record: AnalysisRecord) => {
+      try {
+        if (record.source === 'web-analysis') {
+          // 同步到页面的 AI 状态（用于弹窗显示文案）
+          setAiAnalysisData(prev => ({
+            ...prev,
+            analysisCount: record.analysisCount,
+            parkinsonLevel: record.parkinsonLevel,
+            parkinsonDescription: record.parkinsonDescription,
+            confidence: record.confidence,
+            recommendation: record.recommendation,
+            recommendedResistance: record.recommendedResistance,
+            isAnalyzing: false
+          }));
+          setShowTrainingConfirm(true);
+        }
+      } catch (e) {
+        console.error('订阅 web-analysis 触发训练弹窗失败', e);
+      }
+    });
+    unsubscribeRef.current = off;
+    return () => { try { off?.(); } catch {} };
   }, []);
 
   // 检查浏览器是否支持Web Bluetooth API
@@ -87,6 +121,9 @@ export default function BluetoothConnector({ onDataReceived }: BluetoothConnecto
 
     // 注意：AI分析记录的保存现在由BluetoothManager处理，避免重复保存
     console.log('蓝牙AI分析结果已接收:', result);
+
+    // AI 完成後彈出訓練確認
+    setShowTrainingConfirm(true);
   };
 
   // 处理连接状态变化
@@ -393,7 +430,7 @@ export default function BluetoothConnector({ onDataReceived }: BluetoothConnecto
               校准传感器
             </button>
             <button
-              onClick={() => sendCommand('ANALYZE')}
+              onClick={() => sendCommand('AUTO')}
               className="bg-green-500 hover:bg-green-600 text-white py-2 px-3 rounded-lg transition text-sm"
             >
               AI分析
@@ -506,6 +543,31 @@ export default function BluetoothConnector({ onDataReceived }: BluetoothConnecto
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* 訓練確認彈窗 */}
+      {showTrainingConfirm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-neutral-800 rounded-xl p-6 w-full max-w-md shadow-lg">
+            <h4 className="text-lg font-semibold mb-3">開始 20 秒阻力訓練？</h4>
+            <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+              AI 建議等級：{aiAnalysisData.parkinsonLevel}，建議阻力：{getRecommendedResistance(aiAnalysisData.parkinsonLevel)}°
+            </p>
+            <div className="flex justify-end gap-2">
+              <button className="px-3 py-1 rounded bg-gray-200 dark:bg-neutral-700" onClick={() => setShowTrainingConfirm(false)}>取消</button>
+              <button
+                className="px-3 py-1 rounded bg-blue-600 text-white"
+                onClick={() => {
+                  const level = Math.max(1, Math.min(5, aiAnalysisData.parkinsonLevel || 2));
+                  sendCommand(`TRAIN_SERVO,20000,0,${level}`);
+                  setShowTrainingConfirm(false);
+                }}
+              >
+                開始訓練
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

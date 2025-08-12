@@ -19,6 +19,10 @@
 #include <Arduino.h>
 #include "Arduino_BMI270_BMM150.h"
 #include <Servo.h>
+#define USE_SERVO_EEPROM 0
+#if USE_SERVO_EEPROM
+#include <EEPROM.h>
+#endif
 #include "TensorFlowLite_Inference.h"
 #include <ArduinoBLE.h>
 
@@ -29,7 +33,15 @@
 #define PIN_INDEX     A3
 #define PIN_THUMB     A4
 #define PIN_EMG       A5
+// 單舵機舊定義（保留向後兼容）
 #define PIN_SERVO     9
+
+// 5路舵機引腳（拇指→小指）
+#define PIN_SERVO_THUMB   5
+#define PIN_SERVO_INDEX   6
+#define PIN_SERVO_MIDDLE  9
+#define PIN_SERVO_RING    10
+#define PIN_SERVO_PINKY   11
 
 // 設備檢測引腳
 #define PIN_POT_DETECT    2
@@ -63,7 +75,38 @@ const unsigned long INFERENCE_INTERVAL = 5000; // 推理間隔(ms)
 // AUTO_RESTART_DELAY 已移除 - 單次分析模式不需要自動重啟
 
 // 全局對象
+// 單路舵機（向後兼容老命令）
 Servo rehabServo;
+
+// 5路舵機對象（拇指→小指）
+Servo fingerServos[5];
+const int SERVO_PINS[5] = { PIN_SERVO_THUMB, PIN_SERVO_INDEX, PIN_SERVO_MIDDLE, PIN_SERVO_RING, PIN_SERVO_PINKY };
+
+// 舵機配置（掉電保持）
+struct ServoConfig {
+  uint32_t signature;            // 配置簽名
+  uint8_t version;               // 版本
+  int16_t zeroOffset[5];         // 每指零點偏移（度）
+  uint8_t minAngle[5];           // 每指最小角（安全）
+  uint8_t maxAngle[5];           // 每指最大角（安全）
+  uint8_t directionReversed[5];  // 方向反轉標誌 0/1
+  uint8_t reserved[8];
+};
+
+static ServoConfig servoConfig;
+static const uint32_t SERVO_CFG_SIGNATURE = 0x70524453; // 'S','D','R','p' 任意簽名
+static const uint8_t SERVO_CFG_VERSION = 1;
+
+// 內存中當前角度（度）
+int currentServoAngle[5] = {90, 90, 90, 90, 90};
+
+// 訓練狀態
+bool trainingActive = false;
+unsigned long trainingStartTime = 0;
+unsigned long trainingDurationMs = 0;
+unsigned long lastTrainingStepTime = 0;
+int trainingMode = 0;  // 0: 正弦
+int trainingLevel = 2; // 1..5
 TensorFlowLiteInference aiModel;
 
 // 系統狀態
@@ -134,9 +177,19 @@ void setup() {
         while (1);
     }
 
-    // 初始化舵機
+    // 初始化舵機（單路兼容）
     rehabServo.attach(PIN_SERVO);
     rehabServo.write(90);
+
+    // 初始化5路舵機
+    for (int i = 0; i < 5; i++) {
+        fingerServos[i].attach(SERVO_PINS[i]);
+        fingerServos[i].write(90);
+        currentServoAngle[i] = 90;
+    }
+
+    // 加載舵機配置
+    loadServoConfigOrDefault();
 
     // 初始化AI模型
     aiModel.begin();
@@ -206,7 +259,8 @@ void loop() {
             break;
 
         case STATE_TRAINING:
-            startTraining();
+            // 新版：非阻塞的舵機訓練節拍器
+            tickServoTraining();
             break;
 
         case STATE_REAL_TIME_ANALYSIS:
@@ -251,7 +305,71 @@ void handleSerialCommands() {
             startCalibration();
         } else if (cmd == "STATUS") {
             printSystemStatus();
+        } else if (cmd.startsWith("SERVO_SET")) {
+            // SERVO_SET,<fingerId(0..4)>,<angle>
+            int comma1 = cmd.indexOf(',');
+            int comma2 = cmd.indexOf(',', comma1 + 1);
+            if (comma1 > 0 && comma2 > comma1) {
+                int fingerId = cmd.substring(comma1 + 1, comma2).toInt();
+                int angle = cmd.substring(comma2 + 1).toInt();
+                if (setFingerServoAngle(fingerId, angle)) {
+                    Serial.println("OK,SERVO_SET");
+                } else {
+                    Serial.println("ERR,SERVO_SET");
+                }
+            } else {
+                Serial.println("ERR,BAD_ARGS");
+            }
+        } else if (cmd.startsWith("SERVO_INIT")) {
+            // SERVO_INIT,aT,aI,aM,aR,aP
+            int vals[5];
+            if (parseFiveInts(cmd, vals)) {
+                for (int i = 0; i < 5; i++) setFingerServoAngle(i, vals[i]);
+                Serial.println("OK,SERVO_INIT");
+            } else {
+                Serial.println("ERR,SERVO_INIT");
+            }
+        } else if (cmd.startsWith("SERVO_LIMIT")) {
+            // SERVO_LIMIT,<fingerId>,<min>,<max>
+            int comma1 = cmd.indexOf(',');
+            int comma2 = cmd.indexOf(',', comma1 + 1);
+            if (comma1 > 0 && comma2 > comma1) {
+                int fingerId = cmd.substring(comma1 + 1, comma2).toInt();
+                int comma3 = cmd.indexOf(',', comma2 + 1);
+                if (comma3 > comma2) {
+                    int minA = cmd.substring(comma2 + 1, comma3).toInt();
+                    int maxA = cmd.substring(comma3 + 1).toInt();
+                    if (setServoLimit(fingerId, minA, maxA)) Serial.println("OK,SERVO_LIMIT");
+                    else Serial.println("ERR,SERVO_LIMIT");
+                } else Serial.println("ERR,BAD_ARGS");
+            } else Serial.println("ERR,BAD_ARGS");
+        } else if (cmd == "SERVO_SAVE") {
+            saveServoConfig();
+            Serial.println("OK,SERVO_SAVE");
+        } else if (cmd == "SERVO_LOAD") {
+            loadServoConfigOrDefault();
+            echoServoConfig();
+        } else if (cmd.startsWith("TRAIN_SERVO")) {
+            // TRAIN_SERVO,<durationMs=20000>,<mode=0>,<level=1..5>
+            int comma1 = cmd.indexOf(',');
+            int comma2 = cmd.indexOf(',', comma1 + 1);
+            int comma3 = cmd.indexOf(',', comma2 + 1);
+            unsigned long duration = 20000;
+            int mode = 0;
+            int level = 2;
+            if (comma1 > 0 && comma2 > comma1 && comma3 > comma2) {
+                duration = (unsigned long) cmd.substring(comma1 + 1, comma2).toInt();
+                mode = cmd.substring(comma2 + 1, comma3).toInt();
+                level = cmd.substring(comma3 + 1).toInt();
+            }
+            startServoTraining(duration, mode, level);
+            Serial.println("OK,TRAIN_SERVO");
+        } else if (cmd == "STOP") {
+            stopServoTraining();
+            stopRealTimeAnalysis();
+            Serial.println("OK,STOP");
         } else if (cmd.startsWith("SERVO")) {
+            // 舊命令向後兼容：SERVO,90
             int angle = cmd.substring(6).toInt();
             controlServo(angle);
         } else if (cmd == "STOP") {
@@ -734,6 +852,10 @@ bool isEMGConnected() {
 void controlServo(int angle) {
     angle = constrain(angle, 0, 180);
     rehabServo.write(angle);
+    // 同時將 5 指移動到相同角度（僅用於舊命令測試）
+    for (int i = 0; i < 5; i++) {
+        writeFingerServo(i, angle);
+    }
     Serial.print("舵機角度設定為: ");
     Serial.println(angle);
 }
@@ -776,6 +898,18 @@ void printSystemStatus() {
     }
     
     aiModel.printBufferStatus();
+    // 舵機信息
+    Serial.print("SERVO_CFG: v="); Serial.print(servoConfig.version);
+    Serial.print(" zero=[");
+    for (int i=0;i<5;i++){ Serial.print(servoConfig.zeroOffset[i]); if(i<4) Serial.print(" "); }
+    Serial.print("] min=[");
+    for (int i=0;i<5;i++){ Serial.print(servoConfig.minAngle[i]); if(i<4) Serial.print(" "); }
+    Serial.print("] max=[");
+    for (int i=0;i<5;i++){ Serial.print(servoConfig.maxAngle[i]); if(i<4) Serial.print(" "); }
+    Serial.println("]");
+    Serial.print("TRAINING: "); Serial.print(trainingActive ? "ACTIVE" : "IDLE");
+    Serial.print(", mode="); Serial.print(trainingMode);
+    Serial.print(", level="); Serial.println(trainingLevel);
     Serial.println("================");
 }
 
@@ -958,5 +1092,154 @@ void blinkError() {
         delay(100);
         digitalWrite(PIN_LED_STATUS, LOW);
         delay(100);
+    }
+}
+
+// ===== 舵機擴展：工具函數 =====
+static inline int applyDirectionAndZero(int fingerId, int inputAngle) {
+    int angle = inputAngle + servoConfig.zeroOffset[fingerId];
+    angle = constrain(angle, 0, 180);
+    if (servoConfig.directionReversed[fingerId]) {
+        angle = 180 - angle;
+    }
+    return angle;
+}
+
+static inline int clampToLimits(int fingerId, int angle) {
+    int limited = constrain(angle, servoConfig.minAngle[fingerId], servoConfig.maxAngle[fingerId]);
+    return limited;
+}
+
+void writeFingerServo(int fingerId, int targetAngle) {
+    if (fingerId < 0 || fingerId > 4) return;
+    int a = applyDirectionAndZero(fingerId, targetAngle);
+    a = clampToLimits(fingerId, a);
+    fingerServos[fingerId].write(a);
+    currentServoAngle[fingerId] = a;
+}
+
+bool setFingerServoAngle(int fingerId, int angle) {
+    if (fingerId < 0 || fingerId > 4) return false;
+    writeFingerServo(fingerId, angle);
+    return true;
+}
+
+bool setServoLimit(int fingerId, int minA, int maxA) {
+    if (fingerId < 0 || fingerId > 4) return false;
+    minA = constrain(minA, 0, 180);
+    maxA = constrain(maxA, 0, 180);
+    if (minA >= maxA) return false;
+    servoConfig.minAngle[fingerId] = (uint8_t)minA;
+    servoConfig.maxAngle[fingerId] = (uint8_t)maxA;
+    return true;
+}
+
+bool parseFiveInts(const String &cmd, int outVals[5]) {
+    int first = cmd.indexOf(',');
+    if (first < 0) return false;
+    int pos = first + 1;
+    for (int i = 0; i < 5; i++) {
+        int next = cmd.indexOf(i < 4 ? ',' : '\n', pos);
+        String token;
+        if (next < 0) {
+            token = cmd.substring(pos);
+        } else {
+            token = cmd.substring(pos, next);
+        }
+        token.trim();
+        if (token.length() == 0) return false;
+        outVals[i] = token.toInt();
+        if (next < 0 && i < 4) return false;
+        pos = next + 1;
+    }
+    return true;
+}
+
+void loadServoConfigOrDefault() {
+#if USE_SERVO_EEPROM
+    EEPROM.get(0, servoConfig);
+    bool valid = (servoConfig.signature == SERVO_CFG_SIGNATURE && servoConfig.version == SERVO_CFG_VERSION);
+    if (!valid) {
+        servoConfig.signature = SERVO_CFG_SIGNATURE;
+        servoConfig.version = SERVO_CFG_VERSION;
+        for (int i=0;i<5;i++) {
+            servoConfig.zeroOffset[i] = 0;
+            servoConfig.minAngle[i] = 10;
+            servoConfig.maxAngle[i] = 170;
+            servoConfig.directionReversed[i] = 0;
+        }
+        saveServoConfig();
+    }
+#else
+    servoConfig.signature = SERVO_CFG_SIGNATURE;
+    servoConfig.version = SERVO_CFG_VERSION;
+    for (int i=0;i<5;i++) {
+        servoConfig.zeroOffset[i] = 0;
+        servoConfig.minAngle[i] = 10;
+        servoConfig.maxAngle[i] = 170;
+        servoConfig.directionReversed[i] = 0;
+    }
+#endif
+}
+
+void saveServoConfig() {
+#if USE_SERVO_EEPROM
+    EEPROM.put(0, servoConfig);
+#endif
+}
+
+void echoServoConfig() {
+    Serial.print("SERVO_CFG,OK,");
+    // 輸出：zeroOffset(5),min(5),max(5),dir(5)
+    for (int i=0;i<5;i++){ Serial.print(servoConfig.zeroOffset[i]); Serial.print(','); }
+    for (int i=0;i<5;i++){ Serial.print(servoConfig.minAngle[i]); Serial.print(','); }
+    for (int i=0;i<5;i++){ Serial.print(servoConfig.maxAngle[i]); Serial.print(','); }
+    for (int i=0;i<5;i++){ Serial.print(servoConfig.directionReversed[i]); if(i<4) Serial.print(','); }
+    Serial.println();
+}
+
+// ===== 舵機訓練：非阻塞節拍 =====
+void startServoTraining(unsigned long durationMs, int mode, int level) {
+    trainingActive = true;
+    trainingStartTime = millis();
+    trainingDurationMs = durationMs;
+    trainingMode = mode;
+    trainingLevel = constrain(level, 1, 5);
+    currentState = STATE_TRAINING;
+}
+
+void stopServoTraining() {
+    trainingActive = false;
+    // 回收至安全中位
+    for (int i = 0; i < 5; i++) {
+        writeFingerServo(i, 90);
+    }
+    currentState = STATE_IDLE;
+}
+
+void tickServoTraining() {
+    if (!trainingActive) return;
+    unsigned long now = millis();
+    if (now - lastTrainingStepTime < 100) return; // 10Hz 更新
+    lastTrainingStepTime = now;
+
+    unsigned long elapsed = now - trainingStartTime;
+    if (elapsed >= trainingDurationMs) {
+        stopServoTraining();
+        Serial.println("TRAIN_DONE");
+        return;
+    }
+
+    // 根據 level 設置幅度與頻率
+    // 幅度：10°..60°；頻率：0.1..0.5Hz
+    int amplitude = map(trainingLevel, 1, 5, 10, 60);
+    float freq = 0.1f + 0.1f * (trainingLevel - 1); // 0.1 ~ 0.5Hz
+
+    // 基準角 90°，做正弦擺動
+    float t = (float)elapsed / 1000.0f;
+    for (int i = 0; i < 5; i++) {
+        float phase = i * 0.2f;
+        int target = 90 + (int)(amplitude * sinf(2.0f * PI * freq * t + phase));
+        writeFingerServo(i, target);
     }
 }

@@ -22,6 +22,10 @@
 #include "Arduino_BMI270_BMM150.h"
 #include <Servo.h>
 #include <ArduinoBLE.h>
+#define USE_SERVO_EEPROM 0
+#if USE_SERVO_EEPROM
+#include <EEPROM.h>
+#endif
 #include <PDM.h>
 
 // Pin Definitions
@@ -31,7 +35,15 @@
 #define PIN_INDEX     A3
 #define PIN_THUMB     A4
 #define PIN_EMG       A5
+// Legacy single servo (backward compatible)
 #define PIN_SERVO     9
+
+// 5-channel servos (Thumb→Pinky)
+#define PIN_SERVO_THUMB   5
+#define PIN_SERVO_INDEX   6
+#define PIN_SERVO_MIDDLE  9
+#define PIN_SERVO_RING    10
+#define PIN_SERVO_PINKY   11
 
 // Device Detection Pins
 #define PIN_POT_DETECT    2
@@ -134,6 +146,34 @@ SpeechResult lastSpeechResult;
 
 // Global Objects
 Servo rehabServo;
+
+// Multi-servo support
+Servo fingerServos[5];
+const int SERVO_PINS[5] = { PIN_SERVO_THUMB, PIN_SERVO_INDEX, PIN_SERVO_MIDDLE, PIN_SERVO_RING, PIN_SERVO_PINKY };
+
+struct ServoConfig {
+  uint32_t signature;            // signature
+  uint8_t version;               // version
+  int16_t zeroOffset[5];         // per-finger zero offset (deg)
+  uint8_t minAngle[5];           // per-finger min angle (safety)
+  uint8_t maxAngle[5];           // per-finger max angle (safety)
+  uint8_t directionReversed[5];  // 0/1
+  uint8_t reserved[8];
+};
+
+static ServoConfig servoConfig;
+static const uint32_t SERVO_CFG_SIGNATURE = 0x70524453; // arbitrary signature
+static const uint8_t SERVO_CFG_VERSION = 1;
+
+int currentServoAngle[5] = {90,90,90,90,90};
+
+// Non-blocking training state
+bool trainingActive = false;
+unsigned long trainingStartTime = 0;
+unsigned long trainingDurationMs = 0;
+unsigned long lastTrainingStepTime = 0;
+int trainingModeNonBlocking = 0;  // 0: sine
+int trainingLevelNonBlocking = 2; // 1..5
 
 // BLE Objects - 使用更兼容的初始化方式
 BLEService parkinsonService(BLE_SERVICE_UUID);
@@ -275,6 +315,15 @@ void setup() {
 
     rehabServo.attach(PIN_SERVO);
     rehabServo.write(90);
+    // Attach 5 servos and set to neutral
+    for (int i = 0; i < 5; i++) {
+        fingerServos[i].attach(SERVO_PINS[i]);
+        fingerServos[i].write(90);
+        currentServoAngle[i] = 90;
+    }
+
+    // Load servo config
+    loadServoConfigOrDefault();
 
     // Initialize PDM microphone
     PDM.onReceive(onPDMdata);
@@ -353,7 +402,7 @@ void loop() {
             startDataCollection();
             break;
         case STATE_TRAINING:
-            startTraining();
+            tickServoTraining();
             break;
         case STATE_REAL_TIME_ANALYSIS:
             performSingleAnalysis();
@@ -400,7 +449,56 @@ void handleSerialCommands() {
             startCalibration();
         } else if (cmd == "STATUS") {
             printSystemStatus();
+        } else if (cmd.startsWith("SERVO_SET")) {
+            int comma1 = cmd.indexOf(',');
+            int comma2 = cmd.indexOf(',', comma1 + 1);
+            if (comma1 > 0 && comma2 > comma1) {
+                int fingerId = cmd.substring(comma1 + 1, comma2).toInt();
+                int angle = cmd.substring(comma2 + 1).toInt();
+                if (setFingerServoAngle(fingerId, angle)) Serial.println("OK,SERVO_SET");
+                else Serial.println("ERR,SERVO_SET");
+            } else Serial.println("ERR,BAD_ARGS");
+        } else if (cmd.startsWith("SERVO_INIT")) {
+            int vals[5];
+            if (parseFiveInts(cmd, vals)) {
+                for (int i = 0; i < 5; i++) setFingerServoAngle(i, vals[i]);
+                Serial.println("OK,SERVO_INIT");
+            } else Serial.println("ERR,SERVO_INIT");
+        } else if (cmd.startsWith("SERVO_LIMIT")) {
+            int comma1 = cmd.indexOf(',');
+            int comma2 = cmd.indexOf(',', comma1 + 1);
+            if (comma1 > 0 && comma2 > comma1) {
+                int fingerId = cmd.substring(comma1 + 1, comma2).toInt();
+                int comma3 = cmd.indexOf(',', comma2 + 1);
+                if (comma3 > comma2) {
+                    int minA = cmd.substring(comma2 + 1, comma3).toInt();
+                    int maxA = cmd.substring(comma3 + 1).toInt();
+                    if (setServoLimit(fingerId, minA, maxA)) Serial.println("OK,SERVO_LIMIT");
+                    else Serial.println("ERR,SERVO_LIMIT");
+                } else Serial.println("ERR,BAD_ARGS");
+            } else Serial.println("ERR,BAD_ARGS");
+        } else if (cmd == "SERVO_SAVE") {
+            saveServoConfig();
+            Serial.println("OK,SERVO_SAVE");
+        } else if (cmd == "SERVO_LOAD") {
+            loadServoConfigOrDefault();
+            echoServoConfig();
+        } else if (cmd.startsWith("TRAIN_SERVO")) {
+            int comma1 = cmd.indexOf(',');
+            int comma2 = cmd.indexOf(',', comma1 + 1);
+            int comma3 = cmd.indexOf(',', comma2 + 1);
+            unsigned long duration = 20000;
+            int mode = 0;
+            int level = 2;
+            if (comma1 > 0 && comma2 > comma1 && comma3 > comma2) {
+                duration = (unsigned long) cmd.substring(comma1 + 1, comma2).toInt();
+                mode = cmd.substring(comma2 + 1, comma3).toInt();
+                level = cmd.substring(comma3 + 1).toInt();
+            }
+            startServoTraining(duration, mode, level);
+            Serial.println("OK,TRAIN_SERVO");
         } else if (cmd.startsWith("SERVO")) {
+            // legacy: SERVO,90 -> set all fingers and legacy servo
             int angle = cmd.substring(6).toInt();
             controlServo(angle);
         } else if (cmd == "STOP") {
@@ -855,9 +953,9 @@ bool isEMGConnected() {
 void controlServo(int angle) {
     angle = constrain(angle, 0, 180);
     rehabServo.write(angle);
+    for (int i = 0; i < 5; i++) writeFingerServo(i, angle);
     Serial.print("Servo angle set to: ");
-    Serial.println("TensorFlowLiteInference initialized");
-        //n(angle);
+    Serial.println(angle);
 }
 
 void printSystemStatus() {
@@ -897,6 +995,14 @@ void printSystemStatus() {
     }
 
     aiModel.printBufferStatus();
+    // Servo config/status
+    Serial.print("SERVO_CFG: v="); Serial.print(servoConfig.version);
+    Serial.print(" zero=["); for (int i=0;i<5;i++){ Serial.print(servoConfig.zeroOffset[i]); if(i<4) Serial.print(" "); } Serial.print("]");
+    Serial.print(" min=["); for (int i=0;i<5;i++){ Serial.print(servoConfig.minAngle[i]); if(i<4) Serial.print(" "); } Serial.print("]");
+    Serial.print(" max=["); for (int i=0;i<5;i++){ Serial.print(servoConfig.maxAngle[i]); if(i<4) Serial.print(" "); } Serial.println("]");
+    Serial.print("TRAINING: "); Serial.print(trainingActive ? "ACTIVE" : "IDLE");
+    Serial.print(", mode="); Serial.print(trainingModeNonBlocking);
+    Serial.print(", level="); Serial.println(trainingLevelNonBlocking);
     Serial.println("=====================");
 }
 
@@ -920,6 +1026,132 @@ void sendContinuousWebData() {
         }
 
         lastWebDataTime = currentTime;
+    }
+}
+
+// ===== Servo helpers and training (non-blocking) =====
+static inline int applyDirectionAndZero(int fingerId, int inputAngle) {
+    int angle = inputAngle + servoConfig.zeroOffset[fingerId];
+    angle = constrain(angle, 0, 180);
+    if (servoConfig.directionReversed[fingerId]) angle = 180 - angle;
+    return angle;
+}
+
+static inline int clampToLimits(int fingerId, int angle) {
+    return constrain(angle, servoConfig.minAngle[fingerId], servoConfig.maxAngle[fingerId]);
+}
+
+void writeFingerServo(int fingerId, int targetAngle) {
+    if (fingerId < 0 || fingerId > 4) return;
+    int a = applyDirectionAndZero(fingerId, targetAngle);
+    a = clampToLimits(fingerId, a);
+    fingerServos[fingerId].write(a);
+    currentServoAngle[fingerId] = a;
+}
+
+bool setFingerServoAngle(int fingerId, int angle) {
+    if (fingerId < 0 || fingerId > 4) return false;
+    writeFingerServo(fingerId, angle);
+    return true;
+}
+
+bool setServoLimit(int fingerId, int minA, int maxA) {
+    if (fingerId < 0 || fingerId > 4) return false;
+    minA = constrain(minA, 0, 180);
+    maxA = constrain(maxA, 0, 180);
+    if (minA >= maxA) return false;
+    servoConfig.minAngle[fingerId] = (uint8_t)minA;
+    servoConfig.maxAngle[fingerId] = (uint8_t)maxA;
+    return true;
+}
+
+bool parseFiveInts(const String &cmd, int outVals[5]) {
+    int first = cmd.indexOf(',');
+    if (first < 0) return false;
+    int pos = first + 1;
+    for (int i = 0; i < 5; i++) {
+        int next = cmd.indexOf(i < 4 ? ',' : '\n', pos);
+        String token;
+        if (next < 0) token = cmd.substring(pos); else token = cmd.substring(pos, next);
+        token.trim();
+        if (token.length() == 0) return false;
+        outVals[i] = token.toInt();
+        if (next < 0 && i < 4) return false;
+        pos = next + 1;
+    }
+    return true;
+}
+
+void loadServoConfigOrDefault() {
+#if USE_SERVO_EEPROM
+    EEPROM.get(0, servoConfig);
+    bool valid = (servoConfig.signature == SERVO_CFG_SIGNATURE && servoConfig.version == SERVO_CFG_VERSION);
+    if (!valid) {
+#endif
+        servoConfig.signature = SERVO_CFG_SIGNATURE;
+        servoConfig.version = SERVO_CFG_VERSION;
+        for (int i=0;i<5;i++) {
+            servoConfig.zeroOffset[i] = 0;
+            servoConfig.minAngle[i] = 10;
+            servoConfig.maxAngle[i] = 170;
+            servoConfig.directionReversed[i] = 0;
+        }
+#if USE_SERVO_EEPROM
+        EEPROM.put(0, servoConfig);
+    }
+#endif
+}
+
+void saveServoConfig() {
+#if USE_SERVO_EEPROM
+    EEPROM.put(0, servoConfig);
+#endif
+}
+
+void echoServoConfig() {
+    Serial.print("SERVO_CFG,OK,");
+    for (int i=0;i<5;i++){ Serial.print(servoConfig.zeroOffset[i]); Serial.print(','); }
+    for (int i=0;i<5;i++){ Serial.print(servoConfig.minAngle[i]); Serial.print(','); }
+    for (int i=0;i<5;i++){ Serial.print(servoConfig.maxAngle[i]); Serial.print(','); }
+    for (int i=0;i<5;i++){ Serial.print(servoConfig.directionReversed[i]); if(i<4) Serial.print(','); }
+    Serial.println();
+}
+
+void startServoTraining(unsigned long durationMs, int mode, int level) {
+    trainingActive = true;
+    trainingStartTime = millis();
+    trainingDurationMs = durationMs;
+    trainingModeNonBlocking = mode;
+    trainingLevelNonBlocking = constrain(level, 1, 5);
+    currentState = STATE_TRAINING;
+}
+
+void stopServoTraining() {
+    trainingActive = false;
+    for (int i = 0; i < 5; i++) writeFingerServo(i, 90);
+    currentState = STATE_IDLE;
+}
+
+void tickServoTraining() {
+    if (!trainingActive) return;
+    unsigned long now = millis();
+    if (now - lastTrainingStepTime < 100) return; // 10Hz
+    lastTrainingStepTime = now;
+
+    unsigned long elapsed = now - trainingStartTime;
+    if (elapsed >= trainingDurationMs) {
+        stopServoTraining();
+        Serial.println("TRAIN_DONE");
+        return;
+    }
+
+    int amplitude = map(trainingLevelNonBlocking, 1, 5, 10, 60);
+    float freq = 0.1f + 0.1f * (trainingLevelNonBlocking - 1);
+    float t = (float)elapsed / 1000.0f;
+    for (int i = 0; i < 5; i++) {
+        float phase = i * 0.2f;
+        int target = 90 + (int)(amplitude * sinf(2.0f * PI * freq * t + phase));
+        writeFingerServo(i, target);
     }
 }
 
@@ -1213,10 +1445,62 @@ void handleBLECommand(String command) {
         startCalibration();
     } else if (command == "STATUS") {
         printSystemStatus();
+    } else if (command == "ANALYZE" || command == "AUTO") {
+        startSingleAnalysis();
+    } else if (command.startsWith("SERVO_SET")) {
+        int comma1 = command.indexOf(',');
+        int comma2 = command.indexOf(',', comma1 + 1);
+        if (comma1 > 0 && comma2 > comma1) {
+            int fingerId = command.substring(comma1 + 1, comma2).toInt();
+            int angle = command.substring(comma2 + 1).toInt();
+            if (setFingerServoAngle(fingerId, angle)) sendMessage("OK,SERVO_SET");
+            else sendMessage("ERR,SERVO_SET");
+        } else sendMessage("ERR,BAD_ARGS");
+    } else if (command.startsWith("SERVO_INIT")) {
+        int vals[5];
+        if (parseFiveInts(command, vals)) {
+            for (int i = 0; i < 5; i++) setFingerServoAngle(i, vals[i]);
+            sendMessage("OK,SERVO_INIT");
+        } else sendMessage("ERR,SERVO_INIT");
+    } else if (command.startsWith("SERVO_LIMIT")) {
+        int comma1 = command.indexOf(',');
+        int comma2 = command.indexOf(',', comma1 + 1);
+        if (comma1 > 0 && comma2 > comma1) {
+            int fingerId = command.substring(comma1 + 1, comma2).toInt();
+            int comma3 = command.indexOf(',', comma2 + 1);
+            if (comma3 > comma2) {
+                int minA = command.substring(comma2 + 1, comma3).toInt();
+                int maxA = command.substring(comma3 + 1).toInt();
+                if (setServoLimit(fingerId, minA, maxA)) sendMessage("OK,SERVO_LIMIT");
+                else sendMessage("ERR,SERVO_LIMIT");
+            } else sendMessage("ERR,BAD_ARGS");
+        } else sendMessage("ERR,BAD_ARGS");
+    } else if (command == "SERVO_SAVE") {
+        saveServoConfig();
+        sendMessage("OK,SERVO_SAVE");
+    } else if (command == "SERVO_LOAD") {
+        loadServoConfigOrDefault();
+        echoServoConfig();
+    } else if (command.startsWith("TRAIN_SERVO")) {
+        int comma1 = command.indexOf(',');
+        int comma2 = command.indexOf(',', comma1 + 1);
+        int comma3 = command.indexOf(',', comma2 + 1);
+        unsigned long duration = 20000;
+        int mode = 0;
+        int level = 2;
+        if (comma1 > 0 && comma2 > comma1 && comma3 > comma2) {
+            duration = (unsigned long) command.substring(comma1 + 1, comma2).toInt();
+            mode = command.substring(comma2 + 1, comma3).toInt();
+            level = command.substring(comma3 + 1).toInt();
+        }
+        startServoTraining(duration, mode, level);
+        sendMessage("OK,TRAIN_SERVO");
     } else if (command.startsWith("SERVO")) {
+        // legacy fallback: SERVO,90
         int angle = command.substring(5).toInt();
         controlServo(angle);
     } else if (command == "STOP") {
+        stopServoTraining();
         stopRealTimeAnalysis();
     } else if (command == "AUTO") {
         startSingleAnalysis();

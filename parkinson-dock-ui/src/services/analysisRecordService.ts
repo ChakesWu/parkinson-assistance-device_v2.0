@@ -44,6 +44,32 @@ class AnalysisRecordService {
   private readonly STORAGE_KEY = 'parkinson_analysis_records';
   private readonly MAX_RECORDS = 1000; // 最大记录数量
 
+  // 记录保存事件监听
+  private listeners: Array<(record: AnalysisRecord) => void> = [];
+
+  /**
+   * 订阅记录保存事件
+   */
+  subscribe(listener: (record: AnalysisRecord) => void): () => void {
+    this.listeners.push(listener);
+    return () => {
+      this.listeners = this.listeners.filter(l => l !== listener);
+    };
+  }
+
+  /**
+   * 通知所有订阅者
+   */
+  private notify(record: AnalysisRecord): void {
+    try {
+      for (const listener of this.listeners) {
+        try { listener(record); } catch (e) { /* 忽略单个监听异常 */ }
+      }
+    } catch (_) {
+      // no-op
+    }
+  }
+
   /**
    * 保存新的分析记录
    */
@@ -68,6 +94,8 @@ class AnalysisRecordService {
 
     this.saveToStorage(records);
     console.log('AnalysisRecordService: 記錄保存成功，新記錄數量', records.length);
+    // 触发事件通知
+    this.notify(newRecord);
     return newRecord;
   }
 

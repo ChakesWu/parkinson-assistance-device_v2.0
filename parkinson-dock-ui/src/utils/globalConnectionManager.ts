@@ -303,6 +303,46 @@ export class GlobalConnectionManager {
         this.broadcastMessage('aiResultReceived', result);
       }
     }
+
+    // 解析語音分析結果 SPEECH
+    if (line.startsWith('SPEECH:')) {
+      try {
+        // 格式: SPEECH:1;PROB:0.750;JITTER:0.0123;SHIMMER:0.0456;HNR:15.2;SILENCE:0.123;ACTIVITY:0.876
+        const parts = line.split(';');
+        const result = {
+          speechClass: parseInt(parts[0].split(':')[1] || '0'),
+          probability: parseFloat(parts[1].split(':')[1] || '0'),
+          jitter: parseFloat(parts[2].split(':')[1] || '0'),
+          shimmer: parseFloat(parts[3].split(':')[1] || '0'),
+          hnr: parseFloat(parts[4].split(':')[1] || '0'),
+          silenceRatio: parseFloat(parts[5].split(':')[1] || '0'),
+          voiceActivity: parseFloat(parts[6].split(':')[1] || '0')
+        } as SpeechResult;
+
+        this.callbacks.onSpeechResultReceived?.(result);
+        this.broadcastMessage('speechResultReceived', result);
+      } catch (error) {
+        console.error('Failed to parse serial speech result:', error);
+      }
+    }
+    // 兼容無逗號的 DATA 格式（Arduino使用 "DATA" 開頭且逗號從第一個值開始）
+    if (line.startsWith('DATA')) {
+      const payload = line.startsWith('DATA,') ? line.substring(5) : line.substring(4).replace(/^,/, '');
+      const parts = payload.split(',');
+      const nums = parts.map(v => parseFloat(v));
+      if (nums.length >= 15) {
+        const adjustedFingers = this.adjustFingerDirection(nums.slice(0, 5));
+        const data: SensorData = {
+          fingers: adjustedFingers,
+          accel: { x: nums[6], y: nums[7], z: nums[8] },
+          gyro: { x: nums[9], y: nums[10], z: nums[11] },
+          mag: { x: nums[12], y: nums[13], z: nums[14] },
+          emg: nums[5]
+        };
+        this.callbacks.onDataReceived?.(data);
+        this.broadcastMessage('dataReceived', data);
+      }
+    }
   }
 
   // 发送命令

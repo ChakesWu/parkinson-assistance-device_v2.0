@@ -49,6 +49,18 @@ export default function ArduinoConnector({ onDataReceived }: ArduinoConnectorPro
     isAnalyzing: false
   });
 
+  // 舵机设置状态（拇指到小指）
+  const [servoInitialAngles, setServoInitialAngles] = useState<number[]>([90, 90, 90, 90, 90]);
+  const [servoMinAngles, setServoMinAngles] = useState<number[]>([10, 10, 10, 10, 10]);
+  const [servoMaxAngles, setServoMaxAngles] = useState<number[]>([170, 170, 170, 170, 170]);
+  const [showTrainingConfirm, setShowTrainingConfirm] = useState(false);
+
+  const updateArrayValue = (arr: number[], idx: number, val: number) => {
+    const next = [...arr];
+    next[idx] = Math.max(0, Math.min(180, Math.round(val)));
+    return next;
+  };
+
   // 檢查瀏覽器是否支持Web Serial API
   const isWebSerialSupported = () => {
     return typeof window !== 'undefined' && typeof navigator !== 'undefined' && 'serial' in navigator;
@@ -75,8 +87,8 @@ export default function ArduinoConnector({ onDataReceived }: ArduinoConnectorPro
     try {
       // 請求用戶選擇串口設備
       const selectedPort = await navigator.serial.requestPort();
-      // 與 Arduino 韌體 (Serial.begin(9600)) 一致
-      await selectedPort.open({ baudRate: 9600 });
+      // 與 Arduino 韌體 (Serial.begin(115200)) 一致
+      await selectedPort.open({ baudRate: 115200 });
       
       setPort(selectedPort);
       setIsConnected(true);
@@ -415,8 +427,23 @@ export default function ArduinoConnector({ onDataReceived }: ArduinoConnectorPro
             });
             console.log('Arduino AI分析记录已保存:', record);
             setAiAnalysisData(prev => ({ ...prev, isAnalyzing: false }));
+            // 分析完成后弹出20秒训练确认
+            setShowTrainingConfirm(true);
           } catch (error) {
             console.error('保存Arduino AI分析记录失败:', error);
+          }
+        }
+
+        // 解析舵机配置回显：SERVO_CFG,OK,zero(5),min(5),max(5),dir(5)
+        if (trimmedLine.startsWith('SERVO_CFG,OK,')) {
+          const parts = trimmedLine.split(',');
+          // parts: [SERVO_CFG, OK, z0,z1,z2,z3,z4, min0..min4, max0..max4, dir0..dir4]
+          if (parts.length >= 2 + 5 + 5 + 5 + 5) {
+            const base = 2;
+            const mins = parts.slice(base + 5, base + 10).map(v => parseInt(v));
+            const maxs = parts.slice(base + 10, base + 15).map(v => parseInt(v));
+            setServoMinAngles(mins.map(v => isNaN(v) ? 10 : v));
+            setServoMaxAngles(maxs.map(v => isNaN(v) ? 170 : v));
           }
         }
       }
@@ -425,6 +452,14 @@ export default function ArduinoConnector({ onDataReceived }: ArduinoConnectorPro
       setError(`數據解析錯誤: ${(err as Error).message}`);
     }
   };
+
+  // 舵机命令封装
+  const servoSet = (fingerId: number, angle: number) => sendCommand(`SERVO_SET,${fingerId},${Math.max(0, Math.min(180, Math.round(angle)))}`);
+  const servoInitAll = (angles: number[]) => sendCommand(`SERVO_INIT,${angles.map(a => Math.max(0, Math.min(180, Math.round(a)))).join(',')}`);
+  const servoLimit = (fingerId: number, minA: number, maxA: number) => sendCommand(`SERVO_LIMIT,${fingerId},${Math.max(0, Math.min(180, Math.round(minA)))},${Math.max(0, Math.min(180, Math.round(maxA)))}`);
+  const servoSave = () => sendCommand('SERVO_SAVE');
+  const servoLoad = () => sendCommand('SERVO_LOAD');
+  const startServoTraining = (durationMs = 20000, mode = 0, level = 2) => sendCommand(`TRAIN_SERVO,${durationMs},${mode},${level}`);
 
   // 網頁端初始化函數
   const startWebInitialization = () => {
@@ -632,6 +667,46 @@ export default function ArduinoConnector({ onDataReceived }: ArduinoConnectorPro
         </p>
       </div>
 
+      {/* 舵機設置 */}
+      {isConnected && (
+        <div className="mt-4 p-4 bg-gray-50 dark:bg-neutral-700 rounded-lg">
+          <h3 className="text-sm font-medium mb-3">舵機設置（拇指→小指）</h3>
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+            {['拇指','食指','中指','無名指','小指'].map((label, idx) => (
+              <div key={idx} className="p-3 bg-white dark:bg-neutral-800 rounded-lg border border-gray-200 dark:border-neutral-600">
+                <div className="text-xs font-medium mb-2">{label}</div>
+                <div className="space-y-2">
+                  <label className="block text-xs">初始角: {servoInitialAngles[idx]}°</label>
+                  <input type="range" min={0} max={180} value={servoInitialAngles[idx]}
+                         onChange={(e) => setServoInitialAngles(updateArrayValue(servoInitialAngles, idx, parseInt(e.target.value)))}
+                  />
+                  <div className="flex gap-2">
+                    <input className="w-1/2 text-xs bg-neutral-100 dark:bg-neutral-700 rounded px-2 py-1"
+                           type="number" min={0} max={180} value={servoMinAngles[idx]}
+                           onChange={(e) => setServoMinAngles(updateArrayValue(servoMinAngles, idx, parseInt(e.target.value)))} />
+                    <input className="w-1/2 text-xs bg-neutral-100 dark:bg-neutral-700 rounded px-2 py-1"
+                           type="number" min={0} max={180} value={servoMaxAngles[idx]}
+                           onChange={(e) => setServoMaxAngles(updateArrayValue(servoMaxAngles, idx, parseInt(e.target.value)))} />
+                  </div>
+                  <div className="flex gap-2">
+                    <button className="flex-1 text-xs bg-blue-500 text-white rounded px-2 py-1"
+                            onClick={() => servoSet(idx, servoInitialAngles[idx])}>測試</button>
+                    <button className="flex-1 text-xs bg-gray-200 dark:bg-neutral-600 rounded px-2 py-1"
+                            onClick={() => servoLimit(idx, servoMinAngles[idx], servoMaxAngles[idx])}>限位</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex gap-2">
+            <button className="text-xs bg-purple-500 text-white rounded px-3 py-1" onClick={() => servoInitAll(servoInitialAngles)}>下發全部初始角</button>
+            <button className="text-xs bg-emerald-500 text-white rounded px-3 py-1" onClick={servoSave}>保存到設備</button>
+            <button className="text-xs bg-gray-300 dark:bg-neutral-600 rounded px-3 py-1" onClick={servoLoad}>讀取設備配置</button>
+          </div>
+          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">默認安全角: 最小 10°，最大 170°。如果不確定請保持默認。</p>
+        </div>
+      )}
+
       {isConnected && (
         <div className="mt-8">
           <h3 className="text-lg font-semibold mb-4">即時傳感器數據</h3>
@@ -731,6 +806,23 @@ export default function ArduinoConnector({ onDataReceived }: ArduinoConnectorPro
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* 訓練確認彈窗 */}
+      {showTrainingConfirm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-neutral-800 rounded-xl p-6 w-full max-w-md shadow-lg">
+            <h4 className="text-lg font-semibold mb-3">開始 20 秒阻力訓練？</h4>
+            <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">AI 建議等級：{aiAnalysisData.parkinsonLevel}，建議阻力：{aiAnalysisData.recommendedResistance}°</p>
+            <div className="flex justify-end gap-2">
+              <button className="px-3 py-1 rounded bg-gray-200 dark:bg-neutral-700" onClick={() => setShowTrainingConfirm(false)}>取消</button>
+              <button className="px-3 py-1 rounded bg-blue-600 text-white"
+                      onClick={() => { startServoTraining(20000, 0, Math.max(1, Math.min(5, aiAnalysisData.parkinsonLevel || 2))); setShowTrainingConfirm(false); }}>
+                開始訓練
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
