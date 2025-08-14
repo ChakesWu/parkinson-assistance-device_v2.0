@@ -230,7 +230,7 @@ const Dashboard = ({
                 {sensorData?.fingers && (
                   <div>
                     <div>手指數據 (原始): [{sensorData.fingers.join(', ')}]</div>
-                    <div>手指數據 (百分比): [{sensorData.fingers.map(v => Math.round((v / 1023) * 100)).join('%, ')}%]</div>
+                    <div>手指數據 (百分比): [{sensorData.fingers.map((v: number) => Math.round((v / 1023) * 100)).join('%, ')}%]</div>
                   </div>
                 )}
                 {sensorData?.accel && (

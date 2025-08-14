@@ -4,7 +4,7 @@ import { motion } from "motion/react";
 
 const testimonials = [
   {
-    text: "未來如果能用上這個系統，那麽我們能更好地了解他的病情變化。每天的數據記錄也會讓我們安心，也讓醫生能給出更精準的治療建議。",
+    text: "未来如果能用上这个系统，那么我们能更好地了解他的病情变化。每天的数据记录也会让我们安心，也让医生能给出更精准的治疗建议。",
     image: "https://images.unsplash.com/photo-1494790108755-2616b612b786?w=150&h=150&fit=crop&crop=face",
     name: "Sarah Johnson",
     role: "患者家屬",

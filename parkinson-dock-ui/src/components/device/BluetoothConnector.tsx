@@ -20,6 +20,7 @@ export default function BluetoothConnector({ onDataReceived }: BluetoothConnecto
   });
   const [error, setError] = useState<string | null>(null);
   const [deviceName, setDeviceName] = useState<string | null>(null);
+  const [showAllDevices, setShowAllDevices] = useState(false); // 高级：显示全部设备
 
   // 初始化相关状态
   const [isInitializing, setIsInitializing] = useState(false);
@@ -174,7 +175,7 @@ export default function BluetoothConnector({ onDataReceived }: BluetoothConnecto
     setError(null);
 
     try {
-      await bluetoothManagerRef.current?.connect();
+      await bluetoothManagerRef.current?.connect({ acceptAll: showAllDevices });
     } catch (err) {
       console.error('蓝牙连接错误:', err);
       setError(`蓝牙连接失败: ${(err as Error).message}`);
@@ -348,15 +349,29 @@ export default function BluetoothConnector({ onDataReceived }: BluetoothConnecto
             {isConnected ? '已连接' : isConnecting ? '连接中...' : '未连接'}
           </span>
         </div>
-        
+
         {deviceName && (
           <div className="flex items-center justify-between p-4 bg-gray-100 dark:bg-neutral-700 rounded-lg">
             <span>设备名称</span>
             <span className="font-semibold">{deviceName}</span>
           </div>
         )}
+
+        {/* 高级选项：显示全部设备 */}
+        <div className="flex items-center justify-between p-4 bg-gray-100 dark:bg-neutral-700 rounded-lg">
+          <label className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              className="h-4 w-4"
+              checked={showAllDevices}
+              onChange={(e) => setShowAllDevices(e.target.checked)}
+            />
+            <span className="text-sm">显示全部设备（高级）</span>
+          </label>
+          <span className="text-xs text-gray-500">默认按设备名过滤；勾选后可从所有BLE设备中选择</span>
+        </div>
       </div>
-      
+
       <div className="mt-8 grid grid-cols-2 gap-4">
         {!isConnected ? (
           <button

@@ -65,19 +65,29 @@ export class BluetoothManager {
   }
 
   // 连接到BLE设备
-  async connect(): Promise<void> {
+  async connect(options?: { acceptAll?: boolean; fallbackToAcceptAll?: boolean }): Promise<void> {
     try {
       console.log('正在扫描蓝牙设备...');
 
       // 请求设备
-      this.device = await navigator.bluetooth.requestDevice({
-        filters: [
-          { name: 'ParkinsonDevice_Speech_v2' },
-          { name: 'ParkinsonDevice_v2' },
-          { namePrefix: 'ParkinsonDevice' }
-        ],
-        optionalServices: [this.SERVICE_UUID]
-      });
+      const acceptAll = options?.acceptAll === true;
+      if (acceptAll) {
+        // 显示所有设备（高级模式）
+        this.device = await navigator.bluetooth.requestDevice({
+          acceptAllDevices: true,
+          optionalServices: [this.SERVICE_UUID],
+        });
+      } else {
+        // 按名称/前缀过滤（默认）
+        this.device = await navigator.bluetooth.requestDevice({
+          filters: [
+            { name: 'ParkinsonDevice_Speech_v2' },
+            { name: 'ParkinsonDevice_v2' },
+            { namePrefix: 'ParkinsonDevice' }
+          ],
+          optionalServices: [this.SERVICE_UUID]
+        });
+      }
 
       console.log('找到设备:', this.device.name);
 

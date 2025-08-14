@@ -476,7 +476,7 @@ export default function AIAnalysisPage() {
     <>
       <div className="min-h-screen bg-gray-50 dark:bg-neutral-900">
         <main className="container mx-auto py-12 px-4">
-          <div className="flex gap-4 items-stretch">
+          <div className="flex gap-4 items-stretch max-[760px]:flex-col">
             <Sidebar>
               <SidebarBody>
                 <div className="flex flex-col h-full">
