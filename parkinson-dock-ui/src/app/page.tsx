@@ -1,10 +1,13 @@
 import { FooterDemo } from "@/components/ui/footer-demo";
 import HeroSection from "@/components/ui/hero-section";
+import HeroSectionOld from "@/components/ui/hero-section-old";
 import { AnimatedDock } from "@/components/ui/animated-dock";
 import AnimatedCardDemo from "@/components/ui/animated-card-demo";
 import ParkinsonTestimonials from "@/components/ui/parkinson-testimonials";
 import SimpleLightweightIndicator from "@/components/device/SimpleLightweightIndicator";
 import { Home, Activity, Book, Settings, Brain } from 'lucide-react';
+
+
 
 export default function HomePage() {
   const dockItems = [
@@ -50,10 +53,12 @@ export default function HomePage() {
           ctaHref="/device"
           backgroundImageUrl="/ai_model/Replicate-Web-Page.png"
           gridOptions={{ angle: 65, opacity: 0.0, cellSize: 60 }}
+          className=""
         />
 
+
         {/* 年度帕金森趋势分析（上移与蓝色区域轻微重合，不遮挡患者心声） */}
-        <section className="relative z-10 -mt-16 md:-mt-24 max-w-screen-xl mx-auto px-6 md:px-10 pb-12 md:pb-16">
+        <section className="relative z-10 -mt-16 md:-mt-24 max-w-[80vw] mx-auto px-6 md:px-10 pb-12 md:pb-16">
           {/* 动态树状图（使用 AnimatedCardDemo，不遮挡患者心声） */}
           <div className="w-full flex items-center justify-center">
             <AnimatedCardDemo />

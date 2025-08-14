@@ -108,7 +108,7 @@ const HeroSection = React.forwardRef<HTMLDivElement, HeroSectionProps>(
     return (
       <div
         className={cn(
-          "relative min-w-[1280px] min-h-[720px] w-screen h-screen",
+          "relative w-screen h-screen",
           className,
         )}
         ref={ref}
@@ -130,17 +130,18 @@ const HeroSection = React.forwardRef<HTMLDivElement, HeroSectionProps>(
         {/* Top-left tiny label removed as requested */}
 
         {/* Content grid: center-right focus */}
-        <section className="relative size-full grid grid-cols-[1fr_minmax(640px,52%)] items-center gap-[2vw] px-[clamp(32px,4.5vw,96px)] py-[clamp(32px,4.5vw,96px)]">
+        <section className="flex justify-center relative size-full items-center gap-[2vw]">
           <div />
-          <div className="flex flex-col items-start justify-center -translate-y-[1%] md:-translate-y-[2%] pr-6">
+          <div className="flex flex-col items-center justify-center">
             {/* Headline two lines, extra bold, tight line-height */}
             <h2
-              className="m-0 mb-5 font-black tracking-tight text-[#0B0B0B] break-words max-w-full"
+              className="py-4 px-8 rounded-3xl m-0 mb-5 font-black tracking-tight text-[#0B0B0B] break-words max-w-full"
               style={{
-                fontSize: "clamp(60px, 4.2vw, 80px)",
+                background: "rgba(253, 253, 255, 0.5)",
+                backdropFilter: "blur(20px)",
                 lineHeight: 1.25,
+                fontSize: "clamp(28px, 6vw, 60px)",
                 fontFamily: "'PingFang SC','Hiragino Sans GB','Microsoft YaHei','Source Han Sans SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif",
-                textShadow: "0 4px 8px rgba(0,0,0,0.10)",
               }}
             >
               {(() => {
@@ -151,7 +152,7 @@ const HeroSection = React.forwardRef<HTMLDivElement, HeroSectionProps>(
                     {lines.map((line, idx) => (
                       <span
                         key={idx}
-                        className={cn("block text-left whitespace-nowrap")}
+                        className={cn("block text-center md:text-lg whitespace-nowrap")}
                       >
                         {line}
                       </span>
@@ -175,7 +176,7 @@ const HeroSection = React.forwardRef<HTMLDivElement, HeroSectionProps>(
                   <path d="M13 6l6 6-6 6" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </a>
-              <p className="m-0 ml-3 text-[clamp(16px,1vw,18px)] text-[#6B7280] leading-snug">智能康复训练系统</p>
+              <p className="bg-white rounded-full px-6 py-2 m-0 ml-3 text-[clamp(16px,1vw,18px)] text-[#6B7280] leading-snug">智能康复训练系统</p>
             </div>
           </div>
         </section>
