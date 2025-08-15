@@ -41,15 +41,15 @@ export default function DevicePage() {
       localStorage.setItem('sensorData', JSON.stringify(data));
     }
 
-    // 調試信息：顯示接收到的數據
+    // 调试信息：显示接收到的数据
     if (data.fingers) {
-      console.log('👆 手指數據:', data.fingers);
+      console.log('👆 手指数据:', data.fingers);
     }
     if (data.accel) {
-      console.log('📱 加速度計數據:', data.accel);
+      console.log('📱 加速度计数据:', data.accel);
     }
     if (data.gyro) {
-      console.log('🌀 陀螺儀數據:', data.gyro);
+      console.log('🌀 陀螺仪数据:', data.gyro);
     }
   };
 
@@ -81,11 +81,11 @@ export default function DevicePage() {
   // 准备传递给SimpleHand3D的数据
   const fingerBend = sensorData?.fingers || [0, 0, 0, 0, 0];
 
-  // 將 IMU 加速度計數據轉換為旋轉角度（弧度）
+  // 将 IMU 加速度计数据转换为旋转角度（弧度）
   const rotation = sensorData?.accel ? {
-    x: Math.atan2(sensorData.accel.y, sensorData.accel.z), // 繞 X 軸旋轉
-    y: Math.atan2(-sensorData.accel.x, Math.sqrt(sensorData.accel.y * sensorData.accel.y + sensorData.accel.z * sensorData.accel.z)), // 繞 Y 軸旋轉
-    z: 0 // 繞 Z 軸旋轉（可以使用陀螺儀數據）
+    x: Math.atan2(sensorData.accel.y, sensorData.accel.z), // 绕 X 轴旋转
+    y: Math.atan2(-sensorData.accel.x, Math.sqrt(sensorData.accel.y * sensorData.accel.y + sensorData.accel.z * sensorData.accel.z)), // 绕 Y 轴旋转
+    z: 0 // 绕 Z 轴旋转（可以使用陀螺仪数据）
   } : { x: 0, y: 0, z: 0 };
 
   // 准备传递给HandModel的数据（使用正确的属性名）
@@ -158,17 +158,17 @@ const Dashboard = ({
     <div className="min-h-screen relative">
       <div className="container mx-auto py-6 px-4 flex flex-col gap-6">
         <div className="flex justify-between items-center">
-          <h1 className="text-2xl font-bold">數據台</h1>
+          <h1 className="text-2xl font-bold">数据台</h1>
           <div className="flex items-center gap-4">
             <button
               onClick={testSensorData}
               className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg transition text-sm"
             >
-              🧪 測試數據
+              🧪 测试数据
             </button>
             <div className="text-sm text-gray-500">
-              連接狀態: {sensorData ? '已連接' : '未連接'} |
-              旋轉角度: X:{rotation.x.toFixed(3)}, Y:{rotation.y.toFixed(3)}, Z:{rotation.z.toFixed(3)} |
+              连接状态: {sensorData ? '已连接' : '未连接'} |
+              旋转角度: X:{rotation.x.toFixed(3)}, Y:{rotation.y.toFixed(3)}, Z:{rotation.z.toFixed(3)} |
               控制模式: {controlMode}
             </div>
           </div>
@@ -198,7 +198,7 @@ const Dashboard = ({
                 {controlMode === 'mouse' ? (
                   <>
                     <MousePointer size={18} className="mr-2" />
-                    鼠標控制
+                    鼠标控制
                   </>
                 ) : (
                   <>
@@ -220,26 +220,26 @@ const Dashboard = ({
           </div>
 
           <div className="bg-gray-100 dark:bg-neutral-800 rounded-lg p-4">
-            <h2 className="text-xl font-semibold mb-4">實時傳感器數據</h2>
+            <h2 className="text-xl font-semibold mb-4">实时传感器数据</h2>
 
-            {/* 調試信息顯示 */}
+            {/* 调试信息显示 */}
             <div className="mb-4 p-3 bg-white dark:bg-gray-700 rounded">
-              <h3 className="font-medium mb-2">調試信息</h3>
+              <h3 className="font-medium mb-2">调试信息</h3>
               <div className="text-sm space-y-1">
-                <div>連接狀態: {sensorData ? '已連接' : '未連接'}</div>
+                <div>连接状态: {sensorData ? '已连接' : '未连接'}</div>
                 {sensorData?.fingers && (
                   <div>
-                    <div>手指數據 (原始): [{sensorData.fingers.join(', ')}]</div>
-                    <div>手指數據 (百分比): [{sensorData.fingers.map((v: number) => Math.round((v / 1023) * 100)).join('%, ')}%]</div>
+                    <div>手指数据 (原始): [{sensorData.fingers.join(', ')}]</div>
+                    <div>手指数据 (百分比): [{sensorData.fingers.map((v: number) => Math.round((v / 1023) * 100)).join('%, ')}%]</div>
                   </div>
                 )}
                 {sensorData?.accel && (
-                  <div>加速度計: X:{sensorData.accel.x.toFixed(3)}, Y:{sensorData.accel.y.toFixed(3)}, Z:{sensorData.accel.z.toFixed(3)}</div>
+                  <div>加速度计: X:{sensorData.accel.x.toFixed(3)}, Y:{sensorData.accel.y.toFixed(3)}, Z:{sensorData.accel.z.toFixed(3)}</div>
                 )}
                 {sensorData?.gyro && (
-                  <div>陀螺儀: X:{sensorData.gyro.x.toFixed(3)}, Y:{sensorData.gyro.y.toFixed(3)}, Z:{sensorData.gyro.z.toFixed(3)}</div>
+                  <div>陀螺仪: X:{sensorData.gyro.x.toFixed(3)}, Y:{sensorData.gyro.y.toFixed(3)}, Z:{sensorData.gyro.z.toFixed(3)}</div>
                 )}
-                <div>旋轉角度: X:{rotation.x.toFixed(3)}, Y:{rotation.y.toFixed(3)}, Z:{rotation.z.toFixed(3)}</div>
+                <div>旋转角度: X:{rotation.x.toFixed(3)}, Y:{rotation.y.toFixed(3)}, Z:{rotation.z.toFixed(3)}</div>
                 <div>控制模式: {controlMode}</div>
               </div>
             </div>
@@ -248,7 +248,7 @@ const Dashboard = ({
           </div>
         </div>
 
-        {/* 添加懸浮動態按鈕 */}
+        {/* 添加悬浮动态按钮 */}
         <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50">
           <AnimatedDock items={dockItems} />
         </div>

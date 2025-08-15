@@ -10,52 +10,52 @@ const testimonials = [
     role: "患者家屬",
   },
   {
-    text: "我希望有一天能重新拿起畫筆，畫出美麗的風景。這個系統讓我看到了感覺離夢想更近一步。",
+    text: "我希望有一天能重新拿起画笔，画出美丽的风景。这个系统让我看到了感觉离梦想更近一步。",
     image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face",
     name: "Michael Thompson",
     role: "帕金森患者",
   },
   {
-    text: "媽媽最大的願望就是能再次為我們包餃子。看到她每天堅持訓練，我們全家都很感動。這個系統給了我們全家希望。",
+    text: "妈妈最大的愿望就是能再次为我们包饺子。看到她每天坚持训练，我们全家都很感动。这个系统给了我们全家希望。",
     image: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&h=150&fit=crop&crop=face",
     name: "Emily Rodriguez",
-    role: "患者女兒",
+    role: "患者女儿",
   },
   {
-    text: "我夢想著能再次和老伴一起跳舞，就像年輕時那樣。每天的康復訓練讓我相信，這個夢想不再遙遠。",
+    text: "我梦想着能再次和老伴一起跳舞，就像年轻时那样。每天的康复训练让我相信，这个梦想不再遥远。",
     image: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face",
     name: "David Anderson",
     role: "帕金森患者",
   },
   {
-    text: "看到爸爸的手部功能在慢慢改善，我們全家都很欣慰。這個系統不僅幫助了爸爸，也讓我們學會了如何更好地照顧他。",
+    text: "看到爸爸的手部功能在慢慢改善，我们全家都很欣慰。这个系统不仅帮助了爸爸，也让我们学会了如何更好地照顾他。",
     image: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&h=150&fit=crop&crop=face",
     name: "Jessica Williams",
-    role: "患者家屬",
+    role: "患者家属",
   },
   {
-    text: "我最想做的就是能夠自己寫字，給孫子寫一封信。雖然現在還有困難，但我相信通過持續的訓練，一定能實現這個願望。",
+    text: "我最想做的就是能够自己写字，给孙子写一封信。虽然现在还有困难，但我相信通过持续的训练，一定能实现这个愿望。",
     image: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop&crop=face",
     name: "Robert Miller",
     role: "帕金森患者",
   },
   {
-    text: "這個系統讓我們能夠24小時關注媽媽的狀況，即使我們不在身邊也能安心。科技真的改變了我們的生活。",
+    text: "这个系统让我们能够24小时关注妈妈的状况，即使我们不在身边也能安心。科技真的改变了我们的生活。",
     image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&h=150&fit=crop&crop=face",
     name: "Nanse Brown",
-    role: "患者女兒 ",
+    role: "患者女儿 ",
   },
   {
-    text: "我希望能重新拿起針線，為家人縫製衣服。每一次的訓練都讓我感到手指更加靈活，我相信這個夢想會實現。",
+    text: "我希望能重新拿起针线，为家人缝制衣服。每一次的训练都让我感到手指更加灵活，我相信这个梦想会实现。",
     image: "https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?w=150&h=150&fit=crop&crop=face",
     name: "Grace Davis",
     role: "帕金森患者",
   },
   {
-    text: "爺爺說他想再次下棋，和老朋友們一起度過美好時光。看到他每天努力訓練，我們都被他的堅強感動。",
+    text: "爷爷说他想再次下棋，和老朋友们一起度过美好时光。看到他每天努力训练，我们都被他的坚强感动。",
     image: "https://images.unsplash.com/photo-1507101105822-7472b28e22ac?w=150&h=150&fit=crop&crop=face",
     name: "Alex Martinez",
-    role: "患者孫子",
+    role: "患者孙子",
   },
 ];
 
@@ -76,7 +76,7 @@ const ParkinsonTestimonials = () => {
         >
           <div className="flex justify-center">
             <div className="border py-1 px-4 rounded-lg text-sm bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20">
-              患者心聲
+              患者心声
             </div>
           </div>
 

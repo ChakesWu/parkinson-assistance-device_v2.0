@@ -40,19 +40,19 @@ export default function RecordsPage() {
 
   // 加载记录和统计信息
   useEffect(() => {
-    console.log('Records 頁面載入，開始載入記錄...');
+    console.log('Records 页面载入，开始载入记录...');
     console.log('localStorage 可用性:', typeof Storage !== 'undefined');
-    console.log('當前 localStorage 內容:', localStorage.getItem('parkinson_analysis_records'));
+    console.log('当前 localStorage 内容:', localStorage.getItem('parkinson_analysis_records'));
     loadRecords();
     loadStatistics();
   }, [filterLevel]);
 
   const loadRecords = () => {
     let allRecords = analysisRecordService.getAllRecords();
-    console.log('加載記錄:', allRecords.length, '條記錄');
+    console.log('加载记录:', allRecords.length, '条记录');
     if (filterLevel !== null) {
       allRecords = analysisRecordService.getRecordsByLevel(filterLevel);
-      console.log('篩選後記錄:', allRecords.length, '條記錄');
+      console.log('筛选后记录:', allRecords.length, '条记录');
     }
     setRecords(allRecords);
   };
@@ -94,14 +94,14 @@ export default function RecordsPage() {
         const result = analysisRecordService.importRecords(jsonData);
 
         if (result.success) {
-          alert(`成功導入 ${result.imported} 條記錄${result.errors.length > 0 ? `，${result.errors.length} 條記錄有錯誤` : ''}`);
+          alert(`成功导入 ${result.imported} 条记录${result.errors.length > 0 ? `，${result.errors.length} 条记录有错误` : ''}`);
           loadRecords();
           loadStatistics();
         } else {
-          alert(`導入失敗：${result.errors.join(', ')}`);
+          alert(`导入失败：${result.errors.join(', ')}`);
         }
       } catch (error) {
-        alert('文件格式錯誤');
+        alert('文件格式错误');
       }
     };
     reader.readAsText(file);
@@ -121,9 +121,9 @@ export default function RecordsPage() {
       {
         analysisCount: 1,
         parkinsonLevel: 2,
-        parkinsonDescription: '輕度',
+        parkinsonDescription: '轻度',
         confidence: 85.3,
-        recommendation: '建議進行中等強度的手指靈活性訓練',
+        recommendation: '建议进行中等强度的手指灵活性训练',
         recommendedResistance: 45,
         sensorData: {
           fingerPositions: [45, 52, 38, 41, 49],
@@ -143,9 +143,9 @@ export default function RecordsPage() {
       {
         analysisCount: 2,
         parkinsonLevel: 1,
-        parkinsonDescription: '輕微',
+        parkinsonDescription: '轻微',
         confidence: 92.1,
-        recommendation: '繼續保持當前訓練強度，注意手指協調性',
+        recommendation: '继续保持当前训练强度，注意手指协调性',
         recommendedResistance: 30,
         sensorData: {
           fingerPositions: [38, 42, 35, 39, 44],
@@ -167,7 +167,7 @@ export default function RecordsPage() {
         parkinsonLevel: 3,
         parkinsonDescription: '中度',
         confidence: 78.9,
-        recommendation: '需要增加訓練強度，重點改善震顫控制',
+        recommendation: '需要增加训练强度，重点改善震颤控制',
         recommendedResistance: 60,
         sensorData: {
           fingerPositions: [52, 58, 45, 48, 55],
@@ -202,7 +202,7 @@ export default function RecordsPage() {
         return;
       }
 
-      console.log('測試 localStorage...');
+      console.log('测试 localStorage...');
 
       // 直接写入测试数据
       const testData = [{
@@ -210,27 +210,27 @@ export default function RecordsPage() {
         timestamp: new Date().toISOString(),
         analysisCount: 1,
         parkinsonLevel: 2,
-        parkinsonDescription: '測試',
+        parkinsonDescription: '测试',
         confidence: 85,
-        recommendation: '測試建議',
+        recommendation: '测试建议',
         recommendedResistance: 45,
         source: 'web-analysis'
       }];
 
       localStorage.setItem('parkinson_analysis_records', JSON.stringify(testData));
-      console.log('測試數據已寫入 localStorage');
+      console.log('测试数据已写入 localStorage');
 
       // 读取验证
       const stored = localStorage.getItem('parkinson_analysis_records');
-      console.log('讀取的數據:', stored);
+      console.log('读取的数据:', stored);
 
       loadRecords();
       loadStatistics();
 
-      alert('localStorage 測試完成，請檢查控制台');
+      alert('localStorage 测试完成，请检查控制台');
     } catch (error) {
-      console.error('localStorage 測試失敗:', error);
-      alert('localStorage 測試失敗');
+      console.error('localStorage 测试失败:', error);
+      alert('localStorage 测试失败');
     }
   };
 
@@ -242,7 +242,7 @@ export default function RecordsPage() {
   };
 
   const getSeverityText = (level: number) => {
-    const levels = ['正常', '輕微', '輕度', '中度', '重度', '嚴重'];
+    const levels = ['正常', '轻微', '轻度', '中度', '重度', '严重'];
     return levels[level] || '未知';
   };
 
@@ -260,21 +260,21 @@ export default function RecordsPage() {
     <div className="min-h-screen bg-gray-50 dark:bg-neutral-900">
       <main className="container mx-auto py-12 px-4">
         <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold">AI分析記錄</h1>
+          <h1 className="text-3xl font-bold">AI分析记录</h1>
           <div className="flex gap-2">
             <button
               onClick={() => setShowImportDialog(true)}
               className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
             >
               <Upload size={16} />
-              導入記錄
+              导入记录
             </button>
             <button
               onClick={handleExportRecords}
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
             >
               <Download size={16} />
-              導出記錄
+              导出记录
             </button>
             <button
               onClick={() => setShowClearConfirm(true)}
@@ -282,7 +282,7 @@ export default function RecordsPage() {
               disabled={records.length === 0}
             >
               <Trash2 size={16} />
-              清空記錄
+              清空记录
             </button>
             <button
               onClick={() => { loadRecords(); loadStatistics(); }}
@@ -295,7 +295,7 @@ export default function RecordsPage() {
               onClick={testLocalStorage}
               className="flex items-center gap-2 px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors"
             >
-              測試存儲
+              测试存储
             </button>
           </div>
         </div>
@@ -304,11 +304,11 @@ export default function RecordsPage() {
         {statistics && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
             <div className="bg-white dark:bg-neutral-800 rounded-lg p-4 shadow">
-              <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">總分析次數</h3>
+              <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">总分析次数</h3>
               <p className="text-2xl font-bold text-blue-600">{statistics.totalAnalyses}</p>
             </div>
             <div className="bg-white dark:bg-neutral-800 rounded-lg p-4 shadow">
-              <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">平均等級</h3>
+              <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">平均等级</h3>
               <p className="text-2xl font-bold text-orange-600">{statistics.averageLevel}</p>
             </div>
             <div className="bg-white dark:bg-neutral-800 rounded-lg p-4 shadow">
@@ -316,13 +316,13 @@ export default function RecordsPage() {
               <p className="text-2xl font-bold text-green-600">{statistics.averageConfidence}%</p>
             </div>
             <div className="bg-white dark:bg-neutral-800 rounded-lg p-4 shadow">
-              <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">趨勢</h3>
+              <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">趋势</h3>
               <p className={`text-2xl font-bold ${
                 statistics.recentTrend === 'improving' ? 'text-green-600' :
                 statistics.recentTrend === 'declining' ? 'text-red-600' : 'text-gray-600'
               }`}>
                 {statistics.recentTrend === 'improving' ? '改善' :
-                 statistics.recentTrend === 'declining' ? '惡化' : '穩定'}
+                 statistics.recentTrend === 'declining' ? '恶化' : '稳定'}
               </p>
             </div>
           </div>
@@ -332,19 +332,19 @@ export default function RecordsPage() {
         <div className="bg-white dark:bg-neutral-800 rounded-lg p-4 shadow mb-6">
           <div className="flex items-center gap-4">
             <Filter size={16} />
-            <span className="font-medium">篩選條件：</span>
+            <span className="font-medium">筛选条件：</span>
             <select
               value={filterLevel || ''}
               onChange={(e) => setFilterLevel(e.target.value ? parseInt(e.target.value) : null)}
               className="px-3 py-1 border rounded-md dark:bg-neutral-700 dark:border-neutral-600"
             >
-              <option value="">所有等級</option>
-              <option value="0">正常 (0級)</option>
-              <option value="1">輕微 (1級)</option>
-              <option value="2">輕度 (2級)</option>
-              <option value="3">中度 (3級)</option>
-              <option value="4">重度 (4級)</option>
-              <option value="5">嚴重 (5級)</option>
+              <option value="">所有等级</option>
+              <option value="0">正常 (0级)</option>
+              <option value="1">轻微 (1级)</option>
+              <option value="2">轻度 (2级)</option>
+              <option value="3">中度 (3级)</option>
+              <option value="4">重度 (4级)</option>
+              <option value="5">严重 (5级)</option>
             </select>
           </div>
         </div>
@@ -354,13 +354,13 @@ export default function RecordsPage() {
           {records.length === 0 ? (
             <div className="p-8 text-center">
               <Brain size={48} className="mx-auto mb-4 text-gray-400" />
-              <h3 className="text-lg font-medium text-gray-500 mb-2">暫無分析記錄</h3>
-              <p className="text-gray-400 mb-4">開始進行AI分析後，記錄將顯示在這裡</p>
+              <h3 className="text-lg font-medium text-gray-500 mb-2">暂无分析记录</h3>
+              <p className="text-gray-400 mb-4">开始进行AI分析后，记录将显示在这里</p>
               <button
                 onClick={createSampleRecords}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
               >
-                創建示例記錄
+                创建示例记录
               </button>
             </div>
           ) : (
@@ -373,10 +373,10 @@ export default function RecordsPage() {
                         分析 #{record.analysisCount}
                       </h3>
                       <span className={`px-3 py-1 rounded-full text-sm font-medium ${getSeverityColor(record.parkinsonLevel)}`}>
-                        {getSeverityText(record.parkinsonLevel)} ({record.parkinsonLevel}級)
+                        {getSeverityText(record.parkinsonLevel)} ({record.parkinsonLevel}级)
                       </span>
                       <span className="text-sm text-gray-500">
-                        來源: {record.source === 'arduino' ? 'Arduino設備' : record.source === 'web-analysis' ? '網頁分析' : '手動輸入'}
+                        来源: {record.source === 'arduino' ? 'Arduino设备' : record.source === 'web-analysis' ? '网页分析' : '手动输入'}
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
@@ -398,12 +398,12 @@ export default function RecordsPage() {
                       <p className="font-medium">{record.confidence}%</p>
                     </div>
                     <div className="bg-gray-50 dark:bg-neutral-700 p-3 rounded">
-                      <p className="text-sm text-gray-500 dark:text-gray-400">建議阻力</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">建议阻力</p>
                       <p className="font-medium">{record.recommendedResistance}度</p>
                     </div>
                     {record.duration && (
                       <div className="bg-gray-50 dark:bg-neutral-700 p-3 rounded">
-                        <p className="text-sm text-gray-500 dark:text-gray-400">分析時長</p>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">分析时长</p>
                         <p className="font-medium">{record.duration}秒</p>
                       </div>
                     )}
@@ -411,7 +411,7 @@ export default function RecordsPage() {
 
                   {record.recommendation && (
                     <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded">
-                      <p className="text-sm font-medium text-blue-800 dark:text-blue-200 mb-1">訓練建議</p>
+                      <p className="text-sm font-medium text-blue-800 dark:text-blue-200 mb-1">训练建议</p>
                       <p className="text-sm text-blue-700 dark:text-blue-300">{record.recommendation}</p>
                     </div>
                   )}
@@ -420,13 +420,13 @@ export default function RecordsPage() {
                     <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
                       {record.analysisDetails.tremorFrequency && (
                         <div>
-                          <span className="text-gray-500">震顫頻率: </span>
+                          <span className="text-gray-500">震颤频率: </span>
                           <span className="font-medium">{record.analysisDetails.tremorFrequency.toFixed(2)} Hz</span>
                         </div>
                       )}
                       {record.analysisDetails.graspQuality && (
                         <div>
-                          <span className="text-gray-500">抓握質量: </span>
+                          <span className="text-gray-500">抓握质量: </span>
                           <span className="font-medium">{record.analysisDetails.graspQuality.toFixed(1)}%</span>
                         </div>
                       )}
@@ -448,9 +448,9 @@ export default function RecordsPage() {
         {showDeleteConfirm && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white dark:bg-neutral-800 rounded-lg p-6 max-w-sm mx-4">
-              <h3 className="text-lg font-semibold mb-4">確認刪除</h3>
+              <h3 className="text-lg font-semibold mb-4">确认删除</h3>
               <p className="text-gray-600 dark:text-gray-400 mb-6">
-                確定要刪除這條分析記錄嗎？此操作無法撤銷。
+                确定要删除这条分析记录吗？此操作无法撤销。
               </p>
               <div className="flex gap-3">
                 <button
@@ -463,7 +463,7 @@ export default function RecordsPage() {
                   onClick={() => handleDeleteRecord(showDeleteConfirm)}
                   className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
                 >
-                  刪除
+                  删除
                 </button>
               </div>
             </div>
@@ -474,9 +474,9 @@ export default function RecordsPage() {
         {showClearConfirm && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white dark:bg-neutral-800 rounded-lg p-6 max-w-sm mx-4">
-              <h3 className="text-lg font-semibold mb-4">確認清空所有記錄</h3>
+              <h3 className="text-lg font-semibold mb-4">确认清空所有记录</h3>
               <p className="text-gray-600 dark:text-gray-400 mb-6">
-                確定要清空所有分析記錄嗎？此操作無法撤銷，將刪除 {records.length} 條記錄。
+                确定要清空所有分析记录吗？此操作无法撤销，将删除 {records.length} 条记录。
               </p>
               <div className="flex gap-3">
                 <button
@@ -500,9 +500,9 @@ export default function RecordsPage() {
         {showImportDialog && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white dark:bg-neutral-800 rounded-lg p-6 max-w-sm mx-4">
-              <h3 className="text-lg font-semibold mb-4">導入分析記錄</h3>
+              <h3 className="text-lg font-semibold mb-4">导入分析记录</h3>
               <p className="text-gray-600 dark:text-gray-400 mb-6">
-                選擇要導入的JSON格式記錄文件。
+                选择要导入的JSON格式记录文件。
               </p>
               <div className="mb-6">
                 <input
@@ -525,7 +525,7 @@ export default function RecordsPage() {
         )}
       </main>
 
-      {/* 添加懸浮動態按鈕 */}
+      {/* 添加悬浮动态按钮 */}
       <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50">
         <AnimatedDock items={dockItems} />
       </div>

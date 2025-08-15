@@ -64,14 +64,14 @@ export default function HomePage() {
             <AnimatedCardDemo />
           </div>
         </section>
-        
+
         {/* 使用新的动画 Dock */}
         <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50">
           <AnimatedDock items={dockItems} />
         </div>
       </div>
 
-      {/* 患者見證欄位 */}
+      {/* 患者见证栏位 */}
       <ParkinsonTestimonials />
 
       {/* Footer */}
